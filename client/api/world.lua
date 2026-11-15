@@ -391,8 +391,58 @@ local function installMisc()
     _G.C_EventUtils = _G.C_EventUtils or {}
     C_EventUtils.IsEventValid = function(ev) return W.validEvent(ev) end
     -- Kampfmeter: Szenario setzt damageMeter = { sessions = ... } (siehe api/meter.lua).
+    -- Kampfmeter: damageMeter = { duration = 95, sources = { { name, class, amount, isLocalPlayer,
+    -- healing, spells = { { spellID, amount } } } } }; Schaden und Heilung je Quelle.
     _G.C_DamageMeter = _G.C_DamageMeter or {}
-    C_DamageMeter.IsDamageMeterAvailable = function() return state.damageMeter ~= false end
+    local DM = C_DamageMeter
+    local meter = type(state.damageMeter) == "table" and state.damageMeter or nil
+    local HEAL_TYPES = { [Enum.DamageMeterType.HealingDone] = true, [Enum.DamageMeterType.Hps] = true }
+    local function sources(mType)
+        local out, total, max = {}, 0, 0
+        local dur = meter and meter.duration or 0
+        for i, src in ipairs(meter and meter.sources or {}) do
+            local amount = HEAL_TYPES[mType] and (src.healing or 0) or (src.amount or 0)
+            if amount > 0 then
+                out[#out + 1] = { sourceGUID = string.format("Player-1-%08d", 5000 + i), sourceCreatureID = 0, name = src.name,
+                    classFilename = src.class, specIconID = 0, totalAmount = amount, amountPerSecond = dur > 0 and amount / dur or 0,
+                    isLocalPlayer = src.isLocalPlayer or false, deathRecapID = 0, deathTimeSeconds = 0, classification = "normal",
+                    sourceDisplayType = Enum.DamageMeterSourceDisplayType.Ally, factionGroup = "Alliance", spells = src.spells }
+                total = total + amount
+                if amount > max then max = amount end
+            end
+        end
+        table.sort(out, function(a, b) return a.totalAmount > b.totalAmount end)
+        return out, total, max, dur
+    end
+    local function session(_, mType)
+        local list, total, max, dur = sources(mType)
+        return { combatSources = list, maxAmount = max, totalAmount = total, durationSeconds = dur }
+    end
+    DM.IsDamageMeterAvailable = function() return state.damageMeter ~= false, "" end
+    DM.GetAvailableCombatSessions = function()
+        if not meter then return {} end
+        return { { sessionID = 1, name = meter.name or "Ausbildungsattrappe", durationSeconds = meter.duration or 0 } }
+    end
+    DM.GetCombatSessionFromType = session
+    DM.GetCombatSessionFromID = session
+    local function source(_, mType, guid)
+        for _, src in ipairs((sources(mType))) do
+            if src.sourceGUID == guid then
+                local spells, max = {}, 0
+                for _, sp in ipairs(src.spells or {}) do
+                    spells[#spells + 1] = { spellID = sp.spellID, totalAmount = sp.amount, amountPerSecond = 0, creatureName = "",
+                        overkillAmount = 0, isAvoidable = false, isDeadly = false }
+                    if sp.amount > max then max = sp.amount end
+                end
+                return { combatSpells = spells, maxAmount = max, totalAmount = src.totalAmount }
+            end
+        end
+        return nil
+    end
+    DM.GetCombatSessionSourceFromType = source
+    DM.GetCombatSessionSourceFromID = source
+    DM.GetSessionDurationSeconds = function() return meter and meter.duration or 0 end
+    DM.ResetAllCombatSessions = function() end
 end
 
 -- Minimap-Rahmen: Zoom und Maske speichern, die Karte zeichnet der Zeichner als Platzhalter.

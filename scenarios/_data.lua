@@ -68,6 +68,14 @@ function D.Full()
             { title = "Proben vom Quellwasser", questID = 90004, level = 55, objectives = { { text = "Wasserproben: 2/2", have = 2, need = 2 } } },
         },
         superTracked = 90001,
+        damageMeter = { duration = 95, name = "Ausbildungsattrappe", sources = {
+            { name = "Testfigur", class = "PRIEST", amount = 48200, healing = 61000, isLocalPlayer = true,
+              spells = { { spellID = 10894, amount = 21000 }, { spellID = 10947, amount = 18000 }, { spellID = 10933, amount = 9200 } } },
+            { name = "Brannoc", class = "WARRIOR", amount = 97500, healing = 0 },
+            { name = "Elwyra", class = "MAGE", amount = 121300, healing = 0 },
+            { name = "Feyndra", class = "ROGUE", amount = 88900, healing = 0 },
+            { name = "Gorvin", class = "SHAMAN", amount = 40100, healing = 72400 },
+        } },
         spells = {
             [139] = { name = "Renew", icon = 135953, known = true },
             [17] = { name = "Power Word: Shield", icon = 135940, known = true },
