@@ -4,5 +4,5 @@ return {
     uiScale = 0.77,
     crop = "auto",
     state = require("_data").Full(),
-    steps = { { slash = "/squareminimap" }, { advance = 0.5 } },
+    steps = { { call = "ForeverSquareMinimap:Window.Open" }, { advance = 0.5 } },
 }

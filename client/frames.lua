@@ -503,12 +503,14 @@ function Slider:SetThumbTexture(tex)
 end
 function Slider:GetThumbTexture() return st(self).thumb end
 function Slider:SetMinMaxValues(lo, hi)
+    L.Touch()
     local s = st(self)
     s.min, s.max = num(lo, 0), num(hi, 1)
     W.Fire(self, "OnMinMaxChanged", s.min, s.max)
 end
 function Slider:GetMinMaxValues() local s = st(self) return s.min or 0, s.max or 1 end
 function Slider:SetValue(v)
+    L.Touch()
     local s = st(self)
     v = math.max(s.min or 0, math.min(s.max or 1, num(v, 0)))
     if s.value == v then return end
@@ -522,7 +524,7 @@ function Slider:SetObeyStepOnDrag() end
 function Slider:GetObeyStepOnDrag() return false end
 function Slider:SetStepsPerPage() end
 function Slider:GetStepsPerPage() return 1 end
-function Slider:SetOrientation(o) st(self).orientation = o end
+function Slider:SetOrientation(o) st(self).orientation = o L.Touch() end
 function Slider:GetOrientation() return st(self).orientation or "HORIZONTAL" end
 function Slider:Enable() st(self).disabled = nil end
 function Slider:Disable() st(self).disabled = true end

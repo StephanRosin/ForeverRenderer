@@ -95,6 +95,21 @@ function L.Compute(o, s)
         local w = br[3] * frac
         return { bs.reverse and (br[1] + br[3] - w) or br[1], br[2], w, br[4] }
     end
+    -- Knopf eines Sliders: eigene Groesse, Lage nach Wert (Anker zaehlen nicht).
+    local slider = s.slider
+    if slider and st(slider).thumb == o then
+        local sr = L.Rect(slider)
+        if not sr then return nil end
+        local ss = st(slider)
+        local w, h = ownSize(o, s)
+        w, h = w * es, h * es
+        local lo, hi = ss.min or 0, ss.max or 1
+        local frac = hi > lo and math.max(0, math.min(1, ((ss.value or 0) - lo) / (hi - lo))) or 0
+        if ss.orientation == "VERTICAL" then
+            return { sr[1] + (sr[3] - w) / 2, sr[2] + sr[4] - h - (sr[4] - h) * frac, w, h }
+        end
+        return { sr[1] + (sr[3] - w) * frac, sr[2] + (sr[4] - h) / 2, w, h }
+    end
     -- Kind eines ScrollFrames: liegt an dessen linker oberer Ecke, um den Bildlauf versetzt.
     if s.scrollParent then
         local ps = st(s.scrollParent)

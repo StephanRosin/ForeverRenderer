@@ -2,9 +2,9 @@
 -- Gegenstaende, Zauber, Fertigkeiten, Ruf, Waehrungen, Quests.
 -- Fehlt ein Eintrag, antwortet die API wie ein leerer Spielstand.
 --
--- shortcut: Zauber- und Gegenstandsnamen kommen nur aus dem Szenario (sonst
--- "Spell <id>" und das Fragezeichen-Symbol); fuer echte Namen SpellName/Item
--- aus den DB2 in tools/extract-art ziehen.
+-- Namen und Symbole, die das Szenario nicht nennt, kommen aus den DB2
+-- (items.json, spells.json von tools/extract-art); "gekannt" ist nur, was
+-- das Szenario als known fuehrt.
 local W = require("widgets")
 
 local X = {}
@@ -16,9 +16,28 @@ local state
 
 local function list(name) state[name] = state[name] or {} return state[name] end
 
+-- Spieltabellen aus dem Grafik-Archiv (items.json, spells.json), erst bei Bedarf gelesen.
+local tables = {}
+local function gameTable(name)
+    if tables[name] == nil then
+        local Media = require("media")
+        local src = Media.artDir and require("util").readFile(Media.artDir .. "/" .. name .. ".json")
+        tables[name] = src and Media.DecodeJson(src) or false
+        if not src then require("report").Note("Spieltabelle fehlt: " .. name .. ".json (tools/extract-art)") end
+    end
+    return tables[name] or nil
+end
+
 local function itemOf(id)
     local items = list("items")
-    return items[id]
+    if items[id] then return items[id] end
+    local t = type(id) == "number" and gameTable("items")
+    local e = t and t[tostring(id)]
+    if e and e.name then
+        items[id] = { name = e.name, icon = e.icon, quality = e.quality, classID = e.classID, subclassID = e.subclassID }
+        return items[id]
+    end
+    return nil
 end
 
 local function spellOf(id)
@@ -30,7 +49,13 @@ local function spellOf(id)
     end
     local sp = list("spells")[id]
     if sp then return sp, id end
-    if type(id) == "number" and id > 0 then return { name = "Spell " .. id, icon = QUESTION_MARK_ICON, unknown = true }, id end
+    local t = type(id) == "number" and id > 0 and gameTable("spells")
+    local e = t and t[tostring(id)]
+    if e and e.name then
+        sp = { name = e.name, icon = e.icon or QUESTION_MARK_ICON, known = false }
+        list("spells")[id] = sp
+        return sp, id
+    end
     return nil
 end
 
@@ -334,6 +359,13 @@ local function installQuests()
 end
 
 local function installMisc()
+    -- Gruppensuche: Szenario lfg = { categories = {...}, activities = {...} }, sonst leer.
+    local lfg = state.lfg or {}
+    _G.C_LFGList = _G.C_LFGList or {}
+    C_LFGList.GetAvailableCategories = function() return lfg.categories or {} end
+    C_LFGList.GetAvailableActivities = function() return lfg.activities or {} end
+    C_LFGList.GetSearchResults = function() return #(lfg.results or {}), lfg.results or {} end
+    C_LFGList.HasActiveEntryInfo = function() return false end
     _G.RegisterStaticConstants = function(t) return t end
     _G.C_DateAndTime = _G.C_DateAndTime or {}
     C_DateAndTime.GetCurrentCalendarTime = function()

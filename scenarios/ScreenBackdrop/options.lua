@@ -1,8 +1,8 @@
--- ScreenBackdrop: Optionsfenster (erster Reiter) ueber den Slash-Befehl.
+-- ScreenBackdrop: Optionsseite (im Spiel unter Optionen -> AddOns), hier in
+-- einem schlichten Behaelter statt Blizzards Einstellungsfenster.
 return {
     addons = { "ScreenBackdrop" },
     uiScale = 0.77,
-    crop = "auto",
-    state = require("_data").Full(),
-    steps = { { slash = "/sbd" }, { advance = 0.5 } },
+    crop = { frames = { "ForeverRenderSettingsBox" } },
+    steps = { { run = function() Settings.OpenToCategory("ScreenBackdrop") end }, { advance = 0.5 } },
 }

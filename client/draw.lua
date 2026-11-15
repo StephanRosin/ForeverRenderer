@@ -82,23 +82,6 @@ local function textureItem(t, s, rect, alpha, clip)
         end
         if box[3] <= 0 or box[4] <= 0 then return nil end
     end
-    -- Slider: Daumen sitzt beim Wert.
-    if s.slider and st(s.slider).thumb == t then
-        local sl = s.slider
-        local ss = st(sl)
-        local sr = L.Rect(sl)
-        if sr then
-            local lo, hi = ss.min or 0, ss.max or 1
-            local frac = hi > lo and ((ss.value or 0) - lo) / (hi - lo) or 0
-            local sb = pixelBox(sr)
-            local w, h = box[3], box[4]
-            if ss.orientation == "VERTICAL" then
-                box = { sb[1] + math.floor((sb[3] - w) / 2 + 0.5), sb[2] + math.floor((sb[4] - h) * frac + 0.5), w, h }
-            else
-                box = { sb[1] + math.floor((sb[3] - w) * frac + 0.5), sb[2] + math.floor((sb[4] - h) / 2 + 0.5), w, h }
-            end
-        end
-    end
     item.rect = box
     item.uv = coords
     item.vertex = s.vertex

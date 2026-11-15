@@ -48,6 +48,55 @@ function C.Install(state, env)
     _G.IsInGlue = function() return false end
     _G.GetGlobalEnvironment = function() return _G end
     _G.SwapToGlobalEnvironment = function() end
+    -- Chat: Ausgaben landen als Hinweis im Bericht (kein Chatfenster im Bild).
+    local chat = { AddMessage = function(_, msg) R.Note("Chat: " .. tostring(msg)) end }
+    chat.Show, chat.Hide, chat.IsShown = function() end, function() end, function() return false end
+    _G.DEFAULT_CHAT_FRAME = _G.DEFAULT_CHAT_FRAME or chat
+    _G.SELECTED_CHAT_FRAME = _G.SELECTED_CHAT_FRAME or chat
+    _G.ChatFrame1 = _G.ChatFrame1 or chat
+    _G.UISpecialFrames = _G.UISpecialFrames or {}
+    -- Einstellungsfenster: nur die Registrierung; OpenToCategory zeigt die
+    -- Addon-Seite in einem schlichten Behaelter (Blizzards Fenster fehlt).
+    local SETTINGS_W, SETTINGS_H = 620, 560
+    local categories = {}
+    _G.Settings = _G.Settings or {}
+    Settings.RegisterCanvasLayoutCategory = function(panel, name)
+        local cat = { panel = panel, name = name, ID = #categories + 1 }
+        cat.GetID = function() return cat.ID end
+        cat.GetName = function() return cat.name end
+        categories[#categories + 1] = cat
+        panel:Hide()
+        return cat, cat
+    end
+    Settings.RegisterAddOnCategory = function() end
+    Settings.OpenToCategory = function(id)
+        for _, cat in ipairs(categories) do
+            if cat.ID == id or cat.name == id or cat == id then
+                local box = _G.ForeverRenderSettingsBox
+                if not box then
+                    box = CreateFrame("Frame", "ForeverRenderSettingsBox", UIParent)
+                    box:SetSize(SETTINGS_W, SETTINGS_H)
+                    box:SetPoint("CENTER")
+                    box:SetFrameStrata("HIGH")
+                    local bg = box:CreateTexture(nil, "BACKGROUND")
+                    bg:SetAllPoints()
+                    bg:SetColorTexture(0.05, 0.05, 0.06, 0.95)
+                end
+                cat.panel:SetParent(box)
+                cat.panel:ClearAllPoints()
+                cat.panel:SetAllPoints(box)
+                cat.panel:SetFrameStrata("HIGH")
+                cat.panel:SetFrameLevel(box:GetFrameLevel() + 1)
+                box:Show()
+                cat.panel:Show()
+                return true
+            end
+        end
+        return false
+    end
+    _G.InterfaceOptions_AddCategory = function(panel) Settings.RegisterCanvasLayoutCategory(panel, panel.name) end
+    _G.InterfaceOptionsFrame_OpenToCategory = function(p) return Settings.OpenToCategory(type(p) == "table" and p.name or p) end
+    _G.GetPartyAssignment = function() return false end
     -- Farbtexte (C_ColorUtil) wie der Client: "|cAARRGGBB".
     _G.C_ColorUtil = _G.C_ColorUtil or {}
     local function byte(v) return math.floor(math.max(0, math.min(1, v or 0)) * 255 + 0.5) end
