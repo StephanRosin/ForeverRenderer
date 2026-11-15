@@ -21,6 +21,25 @@ local function find(name)
 end
 S.Find = find
 
+-- Alle Theme-Kennungen der Forever-Familie (Themes.IDS der Addons).
+S.THEME_IDS = { "CLASSIC", "WOOD", "TECH", "PARCHMENT", "RUNESTONE", "GLASS", "COMIC", "FROST", "PIXEL", "SWISS", "CONSOLE", "PITWALL" }
+
+-- Je Addon: aktuelles Theme und Farben je Theme, fuer Bilderbogen und Bericht.
+function S.ThemeInfo()
+    local out = {}
+    for name, e in pairs(rawget(_G, "ForeverThemes") or {}) do
+        if type(e) == "table" and e.Switch then
+            local colors = {}
+            for _, id in ipairs(S.THEME_IDS) do
+                local list = e.Colors and R.Call(e.Colors, id)
+                colors[id] = list or {}
+            end
+            out[name] = { current = e.Current and R.Call(e.Current), color = e.Color and R.Call(e.Color), colors = colors }
+        end
+    end
+    return out
+end
+
 -- Theme (und Farbe) in allen geladenen Forever-Addons ueber ihre
 -- Registrierung _G.ForeverThemes setzen, wie das Theme-Menue des InfoPanel.
 function S.Theme(theme, color, only)
@@ -31,13 +50,27 @@ function S.Theme(theme, color, only)
     for _, name in ipairs(names) do
         local e = reg[name]
         if (not only or only == name) and type(e) == "table" and e.Switch then
-            R.Call(e.Switch, theme)
+            local ok, why = R.Call(e.Switch, theme)
+            if not ok and why then R.Note(name .. ": Theme " .. tostring(theme) .. " abgelehnt (" .. tostring(why) .. ")") end
             if color and e.SetColor then R.Call(e.SetColor, color, theme) end
         end
     end
 end
 
+-- "Addon:Pfad.zur.Funktion" im privaten Namensraum eines Addons aufrufen.
+function S.Call(spec, args)
+    local addon, path = spec:match("^([^:]+):(.+)$")
+    local cur = addon and require("loader").namespaces[addon]
+    for part in (path or ""):gmatch("[^%.]+") do cur = type(cur) == "table" and cur[part] or nil end
+    if type(cur) ~= "function" then
+        R.Error("Schritt call: Funktion fehlt " .. spec, "")
+        return
+    end
+    R.Call(cur, unpack(args or {}))
+end
+
 function S.Run(step, scn)
+    if step.call then S.Call(step.call, step.args) end
     if step.theme then S.Theme(step.theme, step.color, step.addon) end
     if step.advance then E.Advance(step.advance) end
     if step.event then E.Fire(step.event, unpack(step.args or {})) end
@@ -84,6 +117,7 @@ end
 -- Ausschnitt: Rechteck in Pixeln oder Rahmen(+Rand).
 function S.ResolveCrop(crop)
     if not crop then return nil end
+    if crop == "auto" then return "auto" end -- Zeichner nimmt die Huelle aller Elemente
     if crop.rect then return crop.rect end
     local frames = crop.frames or { crop.frame }
     local x0, y0, x1, y1

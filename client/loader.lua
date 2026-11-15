@@ -110,6 +110,8 @@ end
 
 -- SavedVariables aus dem Szenario: Lua-Tabellen, die vor ADDON_LOADED als
 -- Globale bereitstehen (wie aus WTF gelesen).
+Ld.namespaces = {}
+
 function Ld.LoadAddon(dir, name, saved)
     local tocPath
     for _, f in ipairs(U.listDir(dir)) do
@@ -126,6 +128,7 @@ function Ld.LoadAddon(dir, name, saved)
         if saved and saved[var] ~= nil then rawset(_G, var, saved[var]) end
     end
     local ns = {}
+    Ld.namespaces[name] = ns
     Ld.LoadFiles(toc, name, ns)
     Ld.loaded[name] = true
     E.Fire("ADDON_LOADED", name, false)

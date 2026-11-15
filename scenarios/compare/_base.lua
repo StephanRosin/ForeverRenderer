@@ -9,6 +9,7 @@ return {
     screen = { 3440, 1440 },
     uiScale = 0.77,
     wtf = true,
+    drawBlizzard = { "MinimapCluster" },
     state = {
         money = 3025555, zone = "Stormwind City", xp = 61000, xpMax = 100000,
         units = { player = { level = 57 }, target = { name = "Ausbildungsattrappe", level = 60, health = 30000, healthMax = 50000, hostile = true, npcID = 31146, classification = "elite" } },

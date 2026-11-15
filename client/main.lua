@@ -2,7 +2,7 @@
 -- Laedt Blizzards UI-Grundlagen und die Addons des Szenarios, spielt die
 -- Szenario-Schritte ab und schreibt Zeichenliste plus Bericht als JSON.
 local CLIENT_DIR = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = CLIENT_DIR .. "/?.lua;" .. CLIENT_DIR .. "/api/?.lua;" .. package.path
+package.path = CLIENT_DIR .. "/?.lua;" .. CLIENT_DIR .. "/api/?.lua;" .. CLIENT_DIR .. "/../scenarios/?.lua;" .. package.path
 
 local U = require("util")
 local R = require("report")
@@ -93,15 +93,20 @@ E.Advance(scn.settle or 1)
 
 R.phase = "scenario"
 local Steps = require("steps")
+-- Bilderbogen: Theme/Farbe von aussen (FOREVER_THEME, FOREVER_COLOR).
+scn.theme = os.getenv("FOREVER_THEME") or scn.theme
+scn.color = os.getenv("FOREVER_COLOR") or scn.color
 if scn.theme then Steps.Theme(scn.theme, scn.color) E.Advance(0.5) end
 for _, step in ipairs(scn.steps or {}) do Steps.Run(step, scn) end
 E.Advance(scn.settleAfter or 0.5)
 
+for _, name in ipairs(scn.drawBlizzard or {}) do Draw.blizzardAllow[name] = true end
 local items = Draw.Collect()
 local out = {
     screen = { L.physW, L.physH },
     uiScale = scn.uiScale or 1,
     items = items,
+    themes = Steps.ThemeInfo(),
     report = R.Summary(),
     crop = Steps.ResolveCrop(scn.crop),
     background = scn.background,

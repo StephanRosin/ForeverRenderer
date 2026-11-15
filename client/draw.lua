@@ -13,7 +13,8 @@ local st = W.st
 -- Blizzard-Rahmen, die mitgezeichnet werden, obwohl Blizzard sie angelegt hat.
 -- Blizzard-Rahmen, die zum Bild gehoeren (samt Kindern): Tooltip und die
 -- Minimap, die ForeverSquareMinimap umbaut.
-D.blizzardAllow = { GameTooltip = true, MinimapCluster = true }
+-- Weitere per Szenario (drawBlizzard = { "MinimapCluster" }).
+D.blizzardAllow = { GameTooltip = true }
 
 local function intersect(a, b)
     if not a then return b end

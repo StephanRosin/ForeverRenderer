@@ -61,7 +61,7 @@ end
 local function newObject(typeName, parent, name)
     seq = seq + 1
     local c = W.classes[typeName]
-    local s = { type = typeName, seq = seq, parent = parent, shown = true, alpha = 1, points = {} }
+    local s = { type = typeName, seq = seq, parent = parent, shown = true, alpha = 1, points = {}, blizzard = W.loadingBlizzard or nil }
     local o = setmetatable({ [0] = s }, c.meta)
     s.self = o
     if name then

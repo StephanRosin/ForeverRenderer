@@ -63,8 +63,38 @@ def parse_bg(s):
     return s
 
 
+AUTO_PAD = 16
+
+
+def auto_crop(data):
+    """Huelle aller gezeichneten Elemente samt Rand."""
+    x0 = y0 = float("inf")
+    x1 = y1 = float("-inf")
+    for it in data["items"]:
+        r = it.get("rect")
+        if it["k"] == "text":
+            for line in it["lines"]:
+                r2 = [line["x"], line["y"], 1 + max([g[1] for g in line["glyphs"]] or [0]) + it["px"], it["lineH"]]
+                x0, y0 = min(x0, r2[0]), min(y0, r2[1])
+                x1, y1 = max(x1, r2[0] + r2[2]), max(y1, r2[1] + r2[3])
+            continue
+        if it["k"] == "line":
+            r = [min(it["p0"][0], it["p1"][0]), min(it["p0"][1], it["p1"][1]), abs(it["p1"][0] - it["p0"][0]), abs(it["p1"][1] - it["p0"][1])]
+        if r:
+            x0, y0 = min(x0, r[0]), min(y0, r[1])
+            x1, y1 = max(x1, r[0] + r[2]), max(y1, r[1] + r[3])
+    if x0 == float("inf"):
+        return None
+    sw, sh = data["screen"]
+    x0, y0 = max(0, int(x0) - AUTO_PAD), max(0, int(y0) - AUTO_PAD)
+    x1, y1 = min(sw, int(x1) + AUTO_PAD), min(sh, int(y1) + AUTO_PAD)
+    return [x0, y0, x1 - x0, y1 - y0]
+
+
 def render_data(data, full=False, scale=1.0, bg=None):
     crop = None if full else data.get("crop")
+    if crop == "auto":
+        crop = auto_crop(data)
     bg = parse_bg(bg) if bg else (data.get("background") or "checker")
     r = render.Renderer(data, crop=crop, bg=bg)
     problems = r.run()
@@ -136,4 +166,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
