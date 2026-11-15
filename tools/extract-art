@@ -4,9 +4,11 @@
     python3 -I tools/extract-art [produkt]      -> ~/Dokumente/wow-ui-source/art/<version>/
 
 Liest nur die CASC-Dateien, startet oder beruehrt den Client nie. Ergebnis:
-  interface/...png, fonts/..., atlas.json, index.json, index.tsv
+  interface/...png, fonts/..., atlas.json, index.json, index.tsv, globalstrings.json,
+  globalcolors.json, items.json, spells.json
 Gebaut wird in <version>.tmp (abgebrochene Laeufe setzen dort fort), am Ende
-umbenannt. Gibt es <version>/ schon, passiert nichts; alte Builds bleiben liegen.
+umbenannt. Gibt es <version>/ schon, werden nur fehlende oder veraltete JSON-Tabellen nachgetragen
+(Bilder nie); alte Builds bleiben liegen.
 """
 import csv
 import ctypes
@@ -47,13 +49,16 @@ UEBERSPRUNGEN = {
     "interface/glues/loadingscreens/": "Ladebildschirme, gross und kein Rahmen-UI",
 }
 
-DB2_FDID = {"atlas": 897470, "member": 897532, "element": 1989276}
+DB2_FDID = {"atlas": 897470, "member": 897532, "element": 1989276, "leinwand": 1989363}
 GLOBALSTRINGS_FDID = 1394440
 GLOBALCOLOR_FDID = 4328468
+BASIS_CANVAS = 1  # UiCanvas 1 = 1024x768, das logische UI-Mass; 2 = 2048x1536 (@2x)
+OBJEKT_FDID = {"item": 841626, "itemsparse": 1572924, "spellname": 1990283, "spellmisc": 1003144}
 FARBE_KANAL_MAX = 255
 
 # WDC5-Layouts dieses Builds (WoWDBDefs). Je Feld: Name und Typ;
-# "s" = String, "i" = vorzeichenbehaftet, "u" = vorzeichenlos.
+# "s" = String, "i" = vorzeichenbehaftet, "u" = vorzeichenlos (auch Floats und Arrays: Rohbits,
+# hier ungenutzt), "r" = Fremdschluessel aus der Relationship-Map (steht nicht im Satz).
 DB2_LAYOUTS = {
     0x91378408: [("ID", "u"), ("FileDataID", "u"), ("UiTextureAtlasSetID", "u"),
                  ("AtlasWidth", "u"), ("AtlasHeight", "u"), ("UiCanvasID", "u")],
@@ -66,7 +71,40 @@ DB2_LAYOUTS = {
     # GlobalStrings/GlobalColor: ID steht in der ID-Liste, nicht im Satz
     0xD40F6D96: [("BaseTag", "s"), ("TagText_lang", "s"), ("Flags", "u")],
     0x760E0516: [("LuaConstantName", "s"), ("Color", "u")],
+    0x9CA2CFB4: [("Width", "u"), ("Height", "u")],  # UiCanvas
+    0x9A2A4834: [("ClassID", "i"), ("SubclassID", "u"), ("Material", "u"), ("InventoryType", "i"),  # Item
+                 ("SheatheType", "u"), ("ItemPetFoodID", "i"), ("Sound_override_subclassID", "i"),
+                 ("IconFileDataID", "i"), ("ItemGroupSoundsID", "u"), ("ContentTuningID", "i"),
+                 ("ModifiedCraftingReagentItemID", "i"), ("AmmunitionType", "u"), ("CraftingQualityID", "i"),
+                 ("ItemSquishEraID", "i"), ("RecraftReagentCountPercentage", "u"), ("OrderSource", "u")],
+    0x6FCC3191: [("Description_lang", "s"), ("Display3_lang", "s"), ("Display2_lang", "s"),  # ItemSparse
+                 ("Display1_lang", "s"), ("Display_lang", "s"), ("ExpansionID", "i"), ("DmgVariance", "u"),
+                 ("LimitCategory", "i"), ("DurationInInventory", "u"), ("QualityModifier", "u"), ("BagFamily", "u"),
+                 ("StartQuestID", "i"), ("LanguageID", "i"), ("ItemRange", "u"), ("StatPercentageOfSocket", "u"),
+                 ("StatPercentEditor", "u"), ("StatModifier_bonusStat", "u"), ("Stackable", "i"), ("MaxCount", "i"),
+                 ("MinReputation", "i"), ("RequiredAbility", "u"), ("AllowableRace", "u"), ("SellPrice", "u"),
+                 ("BuyPrice", "u"), ("VendorStackCount", "u"), ("PriceVariance", "u"), ("PriceRandomValue", "u"),
+                 ("Flags", "u"), ("OppositeFactionItemID", "i"), ("ModifiedCraftingReagentItemID", "i"),
+                 ("ContentTuningID", "i"), ("PlayerLevelToItemLevelCurveID", "i"), ("ItemLevelOffsetCurveID", "i"),
+                 ("ItemLevelOffsetItemLevel", "i"), ("ItemSquishEraID", "i"), ("ItemNameDescriptionID", "u"),
+                 ("RequiredTransmogHoliday", "u"), ("RequiredHoliday", "u"), ("Gem_properties", "u"),
+                 ("Socket_match_enchantment_ID", "u"), ("TotemCategoryID", "u"), ("InstanceBound", "u"),
+                 ("ZoneBound", "u"), ("ItemSet", "u"), ("LockID", "u"), ("PageID", "u"), ("ItemDelay", "u"),
+                 ("MinFactionID", "u"), ("RequiredSkillRank", "u"), ("RequiredSkill", "u"), ("ItemLevel", "u"),
+                 ("AllowableClass", "i"), ("ArtifactID", "u"), ("SpellWeight", "u"), ("SpellWeightCategory", "u"),
+                 ("SocketType", "u"), ("SheatheType", "u"), ("Material", "u"), ("PageMaterialID", "u"),
+                 ("Bonding", "u"), ("DamageType", "u"), ("ContainerSlots", "u"), ("RequiredPVPMedal", "u"),
+                 ("RequiredPVPRank", "i"), ("RequiredLevel", "i"), ("InventoryType", "i"),
+                 ("OverallQualityID", "i"), ("AmmunitionType", "u")],
+    0x782EE721: [("Name_lang", "s")],  # SpellName
+    0x434B3607: [("Attributes", "u"), ("DifficultyID", "i"), ("CastingTimeIndex", "u"),  # SpellMisc
+                 ("DurationIndex", "u"), ("PvPDurationIndex", "u"), ("RangeIndex", "u"), ("SchoolMask", "u"),
+                 ("Speed", "u"), ("LaunchDelay", "u"), ("MinDuration", "u"), ("SpellIconFileDataID", "i"),
+                 ("ActiveIconFileDataID", "i"), ("ContentTuningID", "i"), ("ShowFutureSpellPlayerConditionID", "i"),
+                 ("SpellVisualScript", "i"), ("ActiveSpellVisualScript", "i"), ("SpellID", "r")],
 }
+# Relation, die zusaetzlich im Satz steht ($relation$ ohne noninline): die Map wird nur gegengeprueft
+DB2_RELATION_IM_SATZ = {0x75E12F73: "UiTextureAtlasElementID"}
 WDC5_MAGIC = b"WDC5"
 WDC5_HEADER_OFFSET = 136  # nach Magic, Version und 128 Byte Schema-Name
 WDC5_HEADER = struct.Struct("<9I2H7I")
@@ -75,6 +113,8 @@ WDC5_FIELD_STORAGE = struct.Struct("<HHIIIII")
 WDC5_FLAG_SPARSE = 0x1
 WDC5_FLAG_ID_LIST = 0x4
 WDC_KOMPRESSION_BITS = (0, 1, 5)  # none, bitpacked, bitpacked signed: Wert steht direkt im Datensatz
+WDC_KOMPRESSION_BITPACKED = 1  # vorzeichenlos gepackt: nie auf die Bitbreite vorzeichenerweitern
+WDC5_OFFSET_MAP_EINTRAG = struct.Struct("<IH")  # Dateioffset und Groesse eines Sparse-Satzes
 WDC_KOMPRESSION_PALLET = 3  # Datensatz haelt Index in den Pallet-Block (u32 je Eintrag)
 
 # CommittedFlags (an "_"- und "!"-Atlanten geprueft, siehe Test)
@@ -179,17 +219,22 @@ def listfile_laden():
 
 def wdc5_lesen(daten):
     """(Zeilen, Anzahl verschluesselt uebersprungener Saetze). Zeilen sind dicts mit den Feldnamen
-    aus DB2_LAYOUTS plus "ID"; Kopiertabelle aufgeloest."""
+    aus DB2_LAYOUTS plus "ID"; Kopiertabelle und Relationship-Map aufgeloest, Sparse-Tabellen
+    ueber die Offset-Map gelesen."""
     if daten[:4] != WDC5_MAGIC:
         raise ValueError("kein WDC5: %r" % daten[:4])
     (anzahl, feldzahl, satzgroesse, _, _, layout, _, _, _, flags, id_index, _, _, _,
      storage_groesse, common_groesse, pallet_groesse, sektion_zahl) = WDC5_HEADER.unpack_from(daten, WDC5_HEADER_OFFSET)
-    felder = DB2_LAYOUTS.get(layout)
-    if felder is None or len(felder) != feldzahl:
+    alle = DB2_LAYOUTS.get(layout)
+    felder = [f for f in alle or () if f[1] != "r"]
+    relation = next((n for n, t in alle or () if t == "r"), None)
+    relation_im_satz = DB2_RELATION_IM_SATZ.get(layout)
+    if alle is None or len(felder) != feldzahl:
         raise ValueError("unbekanntes Layout %08X mit %d Feldern, DB2_LAYOUTS nachfuehren" % (layout, feldzahl))
-    # shortcut: keine Sparse-Tabellen und keine Common-Daten, wie in 1.60.1; bei Bedarf erst erweitern
-    if flags & WDC5_FLAG_SPARSE or common_groesse:
-        raise ValueError("Aufbau nicht unterstuetzt: Flags %#x, Common-Daten %d" % (flags, common_groesse))
+    sparse = flags & WDC5_FLAG_SPARSE
+    # shortcut: keine Common-Daten, wie in 1.60.1; bei Bedarf erst erweitern
+    if common_groesse:
+        raise ValueError("Aufbau nicht unterstuetzt: Common-Daten %d" % common_groesse)
     pos = WDC5_HEADER_OFFSET + WDC5_HEADER.size
     sektionen = [WDC5_SECTION.unpack_from(daten, pos + i * WDC5_SECTION.size) for i in range(sektion_zahl)]
     pos += sektion_zahl * WDC5_SECTION.size + 4 * feldzahl
@@ -198,9 +243,11 @@ def wdc5_lesen(daten):
         raise ValueError("Feldspeicher-Groesse %d passt nicht zu %d Feldern" % (storage_groesse, feldzahl))
     pallet_start = pos + storage_groesse
     pallet_offset, offset = [], 0  # Pallet-Block je Feld liegt hintereinander
-    for (name, _), (_, _, zusatz, kompression, *_) in zip(felder, speicher):
+    for (name, _), (_, bit_breite, zusatz, kompression, *_) in zip(felder, speicher):
         if kompression not in WDC_KOMPRESSION_BITS + (WDC_KOMPRESSION_PALLET,):
             raise ValueError("Feld %s: Kompression %d nicht unterstuetzt" % (name, kompression))
+        if sparse and (kompression or bit_breite % 8):
+            raise ValueError("Sparse-Feld %s: Kompression %d, %d Bit" % (name, kompression, bit_breite))
         pallet_offset.append(pallet_start + offset)
         offset += zusatz if kompression == WDC_KOMPRESSION_PALLET else 0
     if offset != pallet_groesse:
@@ -220,39 +267,74 @@ def wdc5_lesen(daten):
                 return daten[p:daten.index(b"\0", p)].decode("utf-8")
         raise ValueError("String-Offset %d ausserhalb der Tabellen" % global_pos)
 
+    def sparse_satz(start, groesse):
+        """Sparse-Satz: Felder ungepackt hintereinander, Strings stehen nullterminiert im Satz."""
+        zeile, p = {}, start
+        for (name, typ), (_, bit_breite, *_) in zip(felder, speicher):
+            if typ == "s":
+                ende = daten.index(b"\0", p)
+                zeile[name], p = daten[p:ende].decode("utf-8"), ende + 1
+                continue
+            zeile[name] = int.from_bytes(daten[p:p + bit_breite // 8], "little", signed=typ == "i")
+            p += bit_breite // 8
+        if not 0 <= start + groesse - p < 4:  # Saetze sind auf 4 Byte aufgefuellt
+            raise ValueError("Sparse-Satz bei %d: %d Bytes gelesen statt %d" % (start, p - start, groesse))
+        return zeile
+
     zeilen, verschluesselt, global_index = [], 0, 0
-    for tact, satz_start, n, string_groesse, _, id_groesse, _, _, kopien in sektionen:
-        saetze_ende = satz_start + n * satzgroesse
+    for tact, satz_start, n, string_groesse, sparse_ende, id_groesse, relation_groesse, offset_zahl, kopien in sektionen:
+        saetze_ende = sparse_ende if sparse else satz_start + n * satzgroesse
         if tact and not any(daten[satz_start:saetze_ende]):
             # Sektion mit TACT-Schluessel, den der Client nicht hat: CascLib liefert dafuer nichts
             verschluesselt += n
             global_index += n
             continue
-        id_start = saetze_ende + string_groesse
+        id_start = saetze_ende + (0 if sparse else string_groesse)
         if flags & WDC5_FLAG_ID_LIST and id_groesse != 4 * n:
             raise ValueError("ID-Liste %d Bytes fuer %d Saetze" % (id_groesse, n))
+        kopie_start = id_start + id_groesse
+        offset_start = kopie_start + 8 * kopien
+        relation_start = offset_start + WDC5_OFFSET_MAP_EINTRAG.size * offset_zahl
+        if sparse and offset_zahl != n:
+            raise ValueError("Offset-Map mit %d Eintraegen fuer %d Saetze" % (offset_zahl, n))
         sektion_zeilen = []
         for i in range(n):
-            satz = satz_start + i * satzgroesse
-            bits = int.from_bytes(daten[satz:satz + satzgroesse], "little")
-            zeile = {}
-            for f, ((name, typ), (bit_pos, bit_breite, _, kompression, *_)) in enumerate(zip(felder, speicher)):
-                wert = (bits >> bit_pos) & ((1 << bit_breite) - 1)
-                if kompression == WDC_KOMPRESSION_PALLET:
-                    wert = struct.unpack_from("<I", daten, pallet_offset[f] + 4 * wert)[0]
-                    bit_breite = 32
-                if typ == "i" and wert >> (bit_breite - 1):
-                    wert -= 1 << bit_breite
-                elif typ == "s":
-                    # 0 = leerer String (kommt bei Members vor, z. B. ID 14323)
-                    wert = string_lesen((global_index + i - anzahl) * satzgroesse + bit_pos // 8 + wert) if wert else ""
-                zeile[name] = wert
+            if sparse:
+                zeile = sparse_satz(*WDC5_OFFSET_MAP_EINTRAG.unpack_from(daten, offset_start + 6 * i))
+            else:
+                satz = satz_start + i * satzgroesse
+                bits = int.from_bytes(daten[satz:satz + satzgroesse], "little")
+                zeile = {}
+                for f, ((name, typ), (bit_pos, bit_breite, _, kompression, *_)) in enumerate(zip(felder, speicher)):
+                    wert = (bits >> bit_pos) & ((1 << bit_breite) - 1)
+                    if kompression == WDC_KOMPRESSION_PALLET:
+                        wert = struct.unpack_from("<I", daten, pallet_offset[f] + 4 * wert)[0]
+                        bit_breite = 32
+                    if typ == "i" and kompression != WDC_KOMPRESSION_BITPACKED and wert >> (bit_breite - 1):
+                        wert -= 1 << bit_breite
+                    elif typ == "s":
+                        # 0 = leerer String (kommt bei Members vor, z. B. ID 14323)
+                        wert = string_lesen((global_index + i - anzahl) * satzgroesse + bit_pos // 8 + wert) if wert else ""
+                    zeile[name] = wert
             if flags & WDC5_FLAG_ID_LIST:
                 zeile["ID"] = struct.unpack_from("<I", daten, id_start + 4 * i)[0]
             elif "ID" not in zeile:
                 zeile["ID"] = zeile[felder[id_index][0]]
             sektion_zeilen.append(zeile)
-        kopie_start = id_start + id_groesse
+        if relation_groesse:
+            # Kopf: Anzahl, kleinste, groesste ID; dann je Eintrag (Fremd-ID, Satzindex in der Sektion)
+            eintraege = struct.unpack_from("<I", daten, relation_start)[0]
+            if not (relation or relation_im_satz) or relation_groesse != 12 + 8 * eintraege:
+                raise ValueError("Relationship-Map %d Bytes, %d Eintraege, Feld %s" % (relation_groesse, eintraege, relation))
+            for z in sektion_zeilen if relation else ():
+                z[relation] = 0
+            for k in range(eintraege):
+                fremd, index = struct.unpack_from("<2I", daten, relation_start + 12 + 8 * k)
+                if relation:
+                    sektion_zeilen[index][relation] = fremd
+                elif sektion_zeilen[index][relation_im_satz] != fremd:
+                    raise ValueError("Relationship-Map: Satz %d hat %s %d statt %d" % (
+                        index, relation_im_satz, sektion_zeilen[index][relation_im_satz], fremd))
         nach_id = {z["ID"]: z for z in sektion_zeilen}
         for k in range(kopien):
             neu, alt = struct.unpack_from("<2I", daten, kopie_start + 8 * k)
@@ -262,14 +344,26 @@ def wdc5_lesen(daten):
     return zeilen, verschluesselt
 
 
-def atlas_eintrag(member, atlas, datei):
-    """Ein atlas.json-Eintrag: Pixelgroesse und normierte Texturkoordinaten."""
-    breite = member["OverrideWidth"] or member["CommittedRight"] - member["CommittedLeft"]
-    hoehe = member["OverrideHeight"] or member["CommittedBottom"] - member["CommittedTop"]
+def atlas_eintrag(member, atlas, datei, leinwand):
+    """Ein atlas.json-Eintrag: logische Groesse, Pixelgroesse und normierte Texturkoordinaten.
+
+    Logisch = (Override oder Pixel) * Breite UiCanvas 1 / Breite der Leinwand; die Leinwand ist die
+    UiCanvasID des Members, sonst die des Atlas (0 = 1x). Geprueft an StoryHeader-BG (Member-Leinwand 2,
+    608x138 Pixel, im XML 304x69) und ui-hud-actionbar-gryphon-left (2x: Override 200 -> 100 wie 1x)."""
+    canvas = leinwand[member["UiCanvasID"] or atlas["UiCanvasID"] or BASIS_CANVAS]
+    faktor = leinwand[BASIS_CANVAS]["Width"] / canvas["Width"]
+
+    def logisch(px):
+        wert = px * faktor
+        return int(wert) if wert.is_integer() else wert
+
     flags = member["CommittedFlags"]
     kacheln = not flags & ATLAS_FLAG_NICHT_KACHELN
     return {
-        "file": datei, "fdid": atlas["FileDataID"], "width": breite, "height": hoehe,
+        "file": datei, "fdid": atlas["FileDataID"],
+        "width": logisch(member["OverrideWidth"] or member["Width"]),
+        "height": logisch(member["OverrideHeight"] or member["Height"]),
+        "pxWidth": member["Width"], "pxHeight": member["Height"],
         "left": member["CommittedLeft"] / atlas["AtlasWidth"], "right": member["CommittedRight"] / atlas["AtlasWidth"],
         "top": member["CommittedTop"] / atlas["AtlasHeight"], "bottom": member["CommittedBottom"] / atlas["AtlasHeight"],
         "tilesH": kacheln and bool(flags & ATLAS_FLAG_KACHEL_H),
@@ -285,10 +379,11 @@ def atlanten_lesen(casc):
             raise ValueError("%s: %d verschluesselte Saetze" % (n, verschluesselt))
     atlanten = {a["ID"]: a for a in tabellen["atlas"]}
     elemente = {e["ID"]: e["Name"] for e in tabellen["element"]}
-    return atlanten, elemente, tabellen["member"]
+    leinwand = {c["ID"]: c for c in tabellen["leinwand"]}
+    return atlanten, elemente, tabellen["member"], leinwand
 
 
-def atlas_json(atlanten, elemente, members, datei_von_fdid):
+def atlas_json(atlanten, elemente, members, datei_von_fdid, leinwand):
     """Name (klein) -> Eintrag.
 
     Schluessel ist der Element-Name (den SetAtlas kennt). Ein Element kann mehrere Members haben
@@ -319,9 +414,76 @@ def atlas_json(atlanten, elemente, members, datei_von_fdid):
                     continue
             elif durchgang == "committed":
                 probleme["aliase"] += 1
-            ergebnis[name] = atlas_eintrag(m, atlas, datei)
+            ergebnis[name] = atlas_eintrag(m, atlas, datei, leinwand)
     probleme["ohne_textur"] = sorted(n for n, e in ergebnis.items() if e["file"] is None)
     return ergebnis, probleme
+
+
+def json_schreiben(ordner, name, daten, **optionen):
+    with open(os.path.join(ordner, name + ".part"), "w", encoding="utf-8") as f:
+        json.dump(daten, f, indent=1, ensure_ascii=False, **optionen)
+    os.replace(os.path.join(ordner, name + ".part"), os.path.join(ordner, name))
+
+
+def atlas_schreiben(ordner, atlanten, elemente, members, leinwand, datei_von_fdid):
+    """atlas.json schreiben; liefert Berichtszeilen."""
+    atlas, probleme = atlas_json(atlanten, elemente, members, datei_von_fdid, leinwand)
+    json_schreiben(ordner, "atlas.json", atlas, sort_keys=True)
+    bericht = ["Atlanten: %d" % len(atlas),
+               "Atlas: %d Members teilen sich ein Element (vorhandene Textur, dann hoechste ID gewinnt), "
+               "%d CommittedNames als Zusatznamen, %d ohne Textur, %d ohne Atlas-Zeile"
+               % (probleme["doppelt"], probleme["aliase"], len(probleme["ohne_textur"]), len(probleme["ohne_atlas"]))]
+    if probleme["ohne_textur"]:
+        bericht.append("  ohne Textur z. B.: " + ", ".join(probleme["ohne_textur"][:5]))
+    return bericht
+
+
+def atlas_veraltet(ordner):
+    """atlas.json von vor der logischen Groesse (ohne pxWidth) muss neu geschrieben werden."""
+    with open(os.path.join(ordner, "atlas.json"), encoding="utf-8") as f:
+        return any("pxWidth" not in e for e in json.load(f).values())
+
+
+def items_json(item_zeilen, sparse_zeilen):
+    """itemID -> Name, Icon, Qualitaet, Klasse. Fehlt eine Seite, bleiben ihre Felder null."""
+    items = {}
+    for z in item_zeilen:
+        items[z["ID"]] = {"name": None, "icon": z["IconFileDataID"], "quality": None,
+                          "classID": z["ClassID"], "subclassID": z["SubclassID"]}
+    for z in sparse_zeilen:
+        eintrag = items.setdefault(z["ID"], {"name": None, "icon": None, "quality": None,
+                                             "classID": None, "subclassID": None})
+        eintrag["name"], eintrag["quality"] = z["Display_lang"], z["OverallQualityID"]
+    return {str(i): items[i] for i in sorted(items)}
+
+
+def spells_json(namen_zeilen, misc_zeilen):
+    """spellID -> Name und Icon. Mehrere SpellMisc je Zauber: DifficultyID 0 gewinnt, dann die kleinste ID."""
+    misc = {}
+    for z in sorted(misc_zeilen, key=lambda z: (z["DifficultyID"] != 0, z["ID"])):
+        misc.setdefault(z["SpellID"], z)
+    spells = {z["ID"]: {"name": z["Name_lang"], "icon": None} for z in namen_zeilen}
+    for spell_id, z in misc.items():
+        spells.setdefault(spell_id, {"name": None, "icon": None})["icon"] = z["SpellIconFileDataID"]
+    return {str(i): spells[i] for i in sorted(spells)}
+
+
+def objekte_schreiben(casc, ordner):
+    """items.json und spells.json, jede nur, wenn sie noch fehlt; liefert Berichtszeilen."""
+    bericht = []
+    for name, tabellen, bauen in (("items.json", ("item", "itemsparse"), items_json),
+                                  ("spells.json", ("spellname", "spellmisc"), spells_json)):
+        if os.path.exists(os.path.join(ordner, name)):
+            continue
+        zeilen = []
+        for t in tabellen:
+            z, verschluesselt = wdc5_lesen(casc.lesen(OBJEKT_FDID[t], verschluesselt_mit_nullen=True))
+            zeilen.append(z)
+            bericht.append("%s: %d Saetze (%d verschluesselte uebersprungen)" % (t, len(z), verschluesselt))
+        daten = bauen(*zeilen)
+        json_schreiben(ordner, name, daten)
+        bericht.append("%s: %d Eintraege" % (name, len(daten)))
+    return bericht
 
 
 def farbe(argb):
@@ -337,10 +499,8 @@ def globale_schreiben(casc, ordner):
     strings = {z["BaseTag"]: z["TagText_lang"] for z in sorted(zeilen, key=lambda z: z["ID"])}
     farben_zeilen, farben_verschluesselt = wdc5_lesen(casc.lesen(GLOBALCOLOR_FDID, verschluesselt_mit_nullen=True))
     farben = [dict(baseTag=z["LuaConstantName"], **farbe(z["Color"])) for z in sorted(farben_zeilen, key=lambda z: z["ID"])]
-    for name, daten in (("globalstrings.json", strings), ("globalcolors.json", farben)):
-        with open(os.path.join(ordner, name + ".part"), "w", encoding="utf-8") as f:
-            json.dump(daten, f, indent=1, ensure_ascii=False)
-        os.replace(os.path.join(ordner, name + ".part"), os.path.join(ordner, name))
+    json_schreiben(ordner, "globalstrings.json", strings)
+    json_schreiben(ordner, "globalcolors.json", farben)
     return ["GlobalStrings: %d (%d doppelte BaseTags, %d verschluesselte Saetze uebersprungen)"
             % (len(strings), len(zeilen) - len(strings), verschluesselt),
             "GlobalColor: %d (%d verschluesselte Saetze uebersprungen)" % (len(farben), farben_verschluesselt)]
@@ -427,9 +587,20 @@ def main():
     produkt = sys.argv[1] if len(sys.argv) > 1 else "wowf"
     ziel = os.path.join(ART, version(produkt))
     if os.path.exists(ziel):
-        # spaeter dazugekommene Tabellen in fertigen Archiven nachtragen, sonst nichts tun
+        # spaeter dazugekommene oder korrigierte Tabellen in fertigen Archiven nachtragen;
+        # Bilder werden dabei nie neu gezogen
+        casc = None
         if not all(os.path.exists(os.path.join(ziel, n)) for n in ("globalstrings.json", "globalcolors.json")):
-            print("\n".join(globale_schreiben(Casc(produkt), ziel)))
+            casc = Casc(produkt)
+            print("\n".join(globale_schreiben(casc, ziel)))
+        if atlas_veraltet(ziel):
+            casc = casc or Casc(produkt)
+            with open(os.path.join(ziel, "index.json"), encoding="utf-8") as f:
+                datei_von_fdid = {e["fdid"]: rel for rel, e in json.load(f)["files"].items()}
+            print("\n".join(atlas_schreiben(ziel, *atlanten_lesen(casc), datei_von_fdid)))
+        if not all(os.path.exists(os.path.join(ziel, n)) for n in ("items.json", "spells.json")):
+            casc = casc or Casc(produkt)
+            print("\n".join(objekte_schreiben(casc, ziel)))
         print("Schon vollstaendig: " + ziel)
         return
     beginn = time.time()
@@ -454,7 +625,7 @@ def main():
         auftraege[png_pfad(quelle)] = (fdid, quelle)
 
     # Atlas-Texturen ausserhalb von Interface/ oder ohne Listfile-Namen trotzdem mitnehmen
-    atlanten, elemente, members = atlanten_lesen(casc)
+    atlanten, elemente, members, leinwand = atlanten_lesen(casc)
     datei_von_fdid = {fdid: rel for rel, (fdid, _) in auftraege.items()}
     for a in atlanten.values():
         fdid = a["FileDataID"]
@@ -497,10 +668,8 @@ def main():
 
     # Atlas und Index: nur Dateien, die wirklich als PNG vorliegen
     datei_von_fdid = {e["fdid"]: rel for rel, e in fertig.items()}
-    atlas, probleme = atlas_json(atlanten, elemente, members, datei_von_fdid)
-    with open(os.path.join(tmp, "atlas.json"), "w", encoding="utf-8") as f:
-        json.dump(atlas, f, indent=1, sort_keys=True)
-    bericht_globale = globale_schreiben(casc, tmp)
+    bericht_atlas = atlas_schreiben(tmp, atlanten, elemente, members, leinwand, datei_von_fdid)
+    bericht_globale = globale_schreiben(casc, tmp) + objekte_schreiben(casc, tmp)
     index = {rel: {k: e[k] for k in ("fdid", "w", "h", "fmt", "src")} for rel, e in sorted(fertig.items())}
     with open(os.path.join(tmp, "index.json"), "w", encoding="utf-8") as f:
         json.dump({"files": index}, f, indent=1)
@@ -508,16 +677,12 @@ def main():
         for rel, e in index.items():
             f.write("%d\t%s\t%s\t%d\t%d\n" % (e["fdid"], rel[:-len(".png")], rel, e["w"], e["h"]))
 
-    print("\nBilder: %d PNG, Schriften: %d, Atlanten: %d" % (len(fertig), schriften, len(atlas)))
+    print("\nBilder: %d PNG, Schriften: %d" % (len(fertig), schriften))
     print("\n".join(bericht_globale))
     print("Im Listfile, aber nicht in diesem Speicher: %d" % fehlt)
     for prefix, anzahl in skip_zaehler.items():
         print("Uebersprungen %s: %d (%s)" % (prefix, anzahl, UEBERSPRUNGEN[prefix]))
-    print("Atlas: %d Members teilen sich ein Element (vorhandene Textur, dann hoechste ID gewinnt), "
-          "%d CommittedNames als Zusatznamen, %d ohne Textur, %d ohne Atlas-Zeile"
-          % (probleme["doppelt"], probleme["aliase"], len(probleme["ohne_textur"]), len(probleme["ohne_atlas"])))
-    if probleme["ohne_textur"]:
-        print("  ohne Textur z. B.: " + ", ".join(probleme["ohne_textur"][:5]))
+    print("\n".join(bericht_atlas))
     if fehler:
         # bleibt im Archiv, denn der fertige Ordner wird nicht noch einmal angefasst
         with open(os.path.join(tmp, "fehler.txt"), "w", encoding="utf-8") as f:

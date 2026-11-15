@@ -3,10 +3,12 @@
 
     python3 -I tests/test_extract_art.py
 
-Werte stammen aus WoW Forever 1.60.1.70938 (UiTextureAtlas*.db2, gegen wago.tools geprueft).
+Werte stammen aus WoW Forever 1.60.1.70938 (UiTextureAtlas*, UiCanvas, Item, ItemSparse, SpellName,
+SpellMisc; gegen wago.tools geprueft).
 """
 import importlib.machinery
 import importlib.util
+import json
 import os
 import struct
 
@@ -111,17 +113,19 @@ def test_farbe():
     assert ea.farbe(0xFFFF2020)["g"] == 32 / 255  # RED_FONT_COLOR
 
 
-def member(name, l, r, t, b, flags=0, ow=0, oh=0, atlas=2060, element=1, id_=1):
+def member(name, l, r, t, b, flags=0, ow=0, oh=0, atlas=2060, element=1, id_=1, canvas=0):
     return {"CommittedName": name, "ID": id_, "UiTextureAtlasID": atlas, "CommittedLeft": l, "CommittedRight": r,
             "CommittedTop": t, "CommittedBottom": b, "CommittedFlags": flags, "OverrideWidth": ow,
-            "OverrideHeight": oh, "UiTextureAtlasElementID": element}
+            "OverrideHeight": oh, "UiTextureAtlasElementID": element, "Width": r - l, "Height": b - t,
+            "UiCanvasID": canvas}
 
 
-ATLAS_2060 = {"ID": 2060, "FileDataID": 4631591, "AtlasWidth": 1024, "AtlasHeight": 512}
+ATLAS_2060 = {"ID": 2060, "FileDataID": 4631591, "AtlasWidth": 1024, "AtlasHeight": 512, "UiCanvasID": 1}
+LEINWAND = {1: {"ID": 1, "Width": 1024, "Height": 768}, 2: {"ID": 2, "Width": 2048, "Height": 1536}}
 
 
 def test_atlas_koordinaten():
-    e = ea.atlas_eintrag(member("ui-hud-unitframe-player-portraiton", 1, 199, 87, 158), ATLAS_2060, "x.png")
+    e = ea.atlas_eintrag(member("ui-hud-unitframe-player-portraiton", 1, 199, 87, 158), ATLAS_2060, "x.png", LEINWAND)
     assert (e["width"], e["height"]) == (198, 71), e
     assert (e["left"], e["right"], e["top"], e["bottom"]) == (1 / 1024, 199 / 1024, 87 / 512, 158 / 512), e
     assert not e["tilesH"] and not e["tilesV"]
@@ -129,15 +133,15 @@ def test_atlas_koordinaten():
 
 def test_atlas_override_und_kacheln():
     # vignetteloot: Pixel 32x32, Override 24x24; Flag 8 ist kein Kachel-Bit
-    e = ea.atlas_eintrag(member("vignetteloot", 583, 615, 752, 784, flags=8, ow=24, oh=24), ATLAS_2060, "x.png")
+    e = ea.atlas_eintrag(member("vignetteloot", 583, 615, 752, 784, flags=8, ow=24, oh=24), ATLAS_2060, "x.png", LEINWAND)
     assert (e["width"], e["height"]) == (24, 24) and not e["tilesH"] and not e["tilesV"]
     # _BattleBar-Mid kachelt waagrecht (4), !Garr_InfoBox-Left senkrecht (2), Garr_InfoBox-BackgroundTile beides (6)
-    assert ea.atlas_eintrag(member("_battlebar-mid", 0, 256, 0, 124, flags=4), ATLAS_2060, "x")["tilesH"]
-    links = ea.atlas_eintrag(member("!garr_infobox-left", 1, 136, 0, 256, flags=2), ATLAS_2060, "x")
+    assert ea.atlas_eintrag(member("_battlebar-mid", 0, 256, 0, 124, flags=4), ATLAS_2060, "x", LEINWAND)["tilesH"]
+    links = ea.atlas_eintrag(member("!garr_infobox-left", 1, 136, 0, 256, flags=2), ATLAS_2060, "x", LEINWAND)
     assert links["tilesV"] and not links["tilesH"]
-    beides = ea.atlas_eintrag(member("t", 0, 256, 0, 256, flags=6), ATLAS_2060, "x")
+    beides = ea.atlas_eintrag(member("t", 0, 256, 0, 256, flags=6), ATLAS_2060, "x", LEINWAND)
     assert beides["tilesH"] and beides["tilesV"]
-    nie = ea.atlas_eintrag(member("t", 0, 256, 0, 256, flags=0x16), ATLAS_2060, "x")
+    nie = ea.atlas_eintrag(member("t", 0, 256, 0, 256, flags=0x16), ATLAS_2060, "x", LEINWAND)
     assert not nie["tilesH"] and not nie["tilesV"]
 
 
@@ -148,17 +152,155 @@ def test_atlas_doppelte_namen():
                member("transmog-icon-hidden", 988, 1017, 576, 600, atlas=3543, element=5493, id_=33891)]
     elemente = {5493: "Transmog-Icon-Hidden"}
     beide = {1116940: "a.png", 7344437: "b.png"}
-    ergebnis, probleme = ea.atlas_json(atlanten, elemente, members, beide)
+    ergebnis, probleme = ea.atlas_json(atlanten, elemente, members, beide, LEINWAND)
     assert ergebnis["transmog-icon-hidden"]["file"] == "b.png" and probleme["doppelt"] == 1
-    ergebnis, _ = ea.atlas_json(atlanten, elemente, members, {1116940: "a.png"})
+    ergebnis, _ = ea.atlas_json(atlanten, elemente, members, {1116940: "a.png"}, LEINWAND)
     assert ergebnis["transmog-icon-hidden"]["file"] == "a.png"
 
 
 def test_atlas_committed_name_als_zusatzname():
     # Element "_Horde-NineSlice-EdgeTop" hat den Member "_UI-Frame-Horde-TileTop": beide Namen muessen gehen
     members = [member("_UI-Frame-Horde-TileTop", 0, 256, 0, 64, flags=4, element=7)]
-    ergebnis, probleme = ea.atlas_json({2060: ATLAS_2060}, {7: "_Horde-NineSlice-EdgeTop"}, members, {4631591: "h.png"})
+    ergebnis, probleme = ea.atlas_json({2060: ATLAS_2060}, {7: "_Horde-NineSlice-EdgeTop"}, members, {4631591: "h.png"}, LEINWAND)
     assert set(ergebnis) == {"_horde-nineslice-edgetop", "_ui-frame-horde-tiletop"} and probleme["aliase"] == 1
+
+
+def test_atlas_leinwand_2x():
+    # ui-questpoi-questnumber: das @2x-Member (Atlas 2550, Leinwand 2) hat 64 Pixel, logisch 32 wie das 1x-Member
+    atlas_2550 = {"ID": 2550, "FileDataID": 5320937, "AtlasWidth": 512, "AtlasHeight": 256, "UiCanvasID": 2}
+    e = ea.atlas_eintrag(member("ui-questpoi-questnumber-2x", 131, 195, 67, 131), atlas_2550, "x", LEINWAND)
+    assert (e["width"], e["height"], e["pxWidth"], e["pxHeight"]) == (32, 32, 64, 64), e
+    # StoryHeader-BG: Leinwand 2 steht am Member, der Atlas ist 1x; im XML 304x69
+    atlas_910 = dict(ATLAS_2060, FileDataID=904010, UiCanvasID=1)
+    e = ea.atlas_eintrag(member("storyheader-bg", 0, 608, 0, 138, canvas=2), atlas_910, "x", LEINWAND)
+    assert (e["width"], e["height"], e["pxWidth"]) == (304, 69, 608), e
+    # ui-hud-actionbar-gryphon-left @2x: Override 200x200 ist in Leinwand-Pixeln, logisch 100 wie das 1x-Member
+    e = ea.atlas_eintrag(member("g", 0, 356, 0, 356, ow=200, oh=200), atlas_2550, "x", LEINWAND)
+    assert (e["width"], e["height"], e["pxWidth"]) == (100, 100, 356), e
+    # Leinwand 0 am Atlas zaehlt als 1x
+    assert ea.atlas_eintrag(member("t", 0, 75, 0, 75), dict(ATLAS_2060, UiCanvasID=0), "x", LEINWAND)["width"] == 75
+
+
+SPARSE_LAYOUT = 0x5BA25E01  # Test-Layout: Ausschnitt aus ItemSparse
+
+
+def wdc5_sparse(saetze, kopie):
+    """Sparse-Tabelle (Offset-Map) im Aufbau von ItemSparse.db2 1.60.1: Strings stehen im Satz,
+    Saetze auf 4 Byte aufgefuellt, hinter den Saetzen ID-Liste, Kopiertabelle, Offset-Map, Offset-ID-Liste."""
+    feldzahl = 3
+    kopf = b"WDC5" + struct.pack("<I", 5) + b"\0" * 128
+    kopf += ea.WDC5_HEADER.pack(len(saetze), feldzahl, 9, 0, 0, SPARSE_LAYOUT, 0, 0, 1,
+                                ea.WDC5_FLAG_SPARSE | ea.WDC5_FLAG_ID_LIST, 0, feldzahl, 0, 0, feldzahl * 24, 0, 0, 1)
+    felder = struct.pack("<hHhHhH", 0, 0, 0, 4, 24, 8)
+    speicher = (ea.WDC5_FIELD_STORAGE.pack(0, 32, 0, 0, 0, 0, 0) + ea.WDC5_FIELD_STORAGE.pack(32, 32, 0, 0, 0, 0, 0)
+                + ea.WDC5_FIELD_STORAGE.pack(64, 8, 0, 0, 0, 0, 0))
+    satz_start = len(kopf) + ea.WDC5_SECTION.size + len(felder) + len(speicher)
+    saetze_bytes, offsets = b"", b""
+    for name, stapel, qualitaet, _ in saetze:
+        satz = name.encode() + b"\0" + struct.pack("<ib", stapel, qualitaet)
+        satz += bytes(-len(satz) % 4)
+        offsets += ea.WDC5_OFFSET_MAP_EINTRAG.pack(satz_start + len(saetze_bytes), len(satz))
+        saetze_bytes += satz
+    ids = b"".join(struct.pack("<I", id_) for *_, id_ in saetze)
+    sektion = ea.WDC5_SECTION.pack(0, satz_start, len(saetze), 0, satz_start + len(saetze_bytes), len(ids), 0,
+                                   len(saetze), 1)
+    return kopf + sektion + felder + speicher + saetze_bytes + ids + struct.pack("<2I", *kopie) + offsets + ids
+
+
+def test_wdc5_sparse():
+    ea.DB2_LAYOUTS[SPARSE_LAYOUT] = [("Display_lang", "s"), ("Stackable", "i"), ("OverallQualityID", "i")]
+    try:
+        daten = wdc5_sparse([("Hearthstone", 1, 1, 6948), ("Linen Cloth", 20, 1, 2589), ("X", -1, -1, 7)], (99999, 2589))
+        zeilen, verschluesselt = ea.wdc5_lesen(daten)
+        assert verschluesselt == 0
+        assert zeilen == [{"Display_lang": "Hearthstone", "Stackable": 1, "OverallQualityID": 1, "ID": 6948},
+                          {"Display_lang": "Linen Cloth", "Stackable": 20, "OverallQualityID": 1, "ID": 2589},
+                          {"Display_lang": "X", "Stackable": -1, "OverallQualityID": -1, "ID": 7},
+                          {"Display_lang": "Linen Cloth", "Stackable": 20, "OverallQualityID": 1, "ID": 99999}], zeilen
+        # Satzgroesse in der Offset-Map passt nicht zum Layout: klarer Fehler statt geratener Werte
+        kaputt = bytearray(daten)
+        offset_map = len(daten) - 3 * 4 - 3 * ea.WDC5_OFFSET_MAP_EINTRAG.size  # vor der Offset-ID-Liste
+        struct.pack_into("<H", kaputt, offset_map + 4, 24)  # Hearthstone-Satz ist 20 Byte
+        try:
+            ea.wdc5_lesen(bytes(kaputt))
+        except ValueError as f:
+            assert "Sparse-Satz" in str(f), f
+        else:
+            raise AssertionError("falsche Satzgroesse muss scheitern")
+    finally:
+        del ea.DB2_LAYOUTS[SPARSE_LAYOUT]
+
+
+RELATION_LAYOUT = 0x5BA25E02  # Test-Layout: Ausschnitt aus SpellMisc
+
+
+def test_wdc5_relationship_map():
+    """SpellMisc-artig: SpellID steht nicht im Satz, sondern in der Relationship-Map (Satzindex -> SpellID).
+    DifficultyID ist vorzeichenlos gepackt (4 Bit): 8 bleibt 8."""
+    ea.DB2_LAYOUTS[RELATION_LAYOUT] = [("DifficultyID", "i"), ("SpellIconFileDataID", "i"), ("SpellID", "r")]
+    try:
+        feldzahl, satzgroesse = 2, 8
+        kopf = b"WDC5" + struct.pack("<I", 5) + b"\0" * 128
+        kopf += ea.WDC5_HEADER.pack(2, feldzahl, satzgroesse, 0, 0, RELATION_LAYOUT, 0, 0, 0xFFFFFFFF,
+                                    ea.WDC5_FLAG_ID_LIST, 0, feldzahl, 0, 1, feldzahl * 24, 0, 0, 1)
+        felder = struct.pack("<hHhH", 0, 0, 0, 4)
+        speicher = (ea.WDC5_FIELD_STORAGE.pack(0, 4, 0, ea.WDC_KOMPRESSION_BITPACKED, 0, 4, 0)
+                    + ea.WDC5_FIELD_STORAGE.pack(32, 32, 0, 0, 0, 0, 0))
+        satz_start = len(kopf) + ea.WDC5_SECTION.size + len(felder) + len(speicher)
+        saetze = struct.pack("<II", 0, 136085) + struct.pack("<II", 8, 136085)
+        ids = struct.pack("<2I", 321073, 400000)
+        relation = struct.pack("<3I", 2, 8936, 8937) + struct.pack("<4I", 8937, 1, 8936, 0)
+        sektion = ea.WDC5_SECTION.pack(0, satz_start, 2, 0, 0, len(ids), len(relation), 0, 0)
+        zeilen, _ = ea.wdc5_lesen(kopf + sektion + felder + speicher + saetze + ids + relation)
+        assert zeilen == [{"DifficultyID": 0, "SpellIconFileDataID": 136085, "ID": 321073, "SpellID": 8936},
+                          {"DifficultyID": 8, "SpellIconFileDataID": 136085, "ID": 400000, "SpellID": 8937}], zeilen
+    finally:
+        del ea.DB2_LAYOUTS[RELATION_LAYOUT]
+
+
+def test_items_json():
+    item = [{"ID": 6948, "IconFileDataID": 134414, "ClassID": 15, "SubclassID": 0},
+            {"ID": 2589, "IconFileDataID": 132889, "ClassID": 7, "SubclassID": 5},
+            {"ID": 1, "IconFileDataID": 5, "ClassID": 0, "SubclassID": 0}]
+    sparse = [{"ID": 6948, "Display_lang": "Hearthstone", "OverallQualityID": 1},
+              {"ID": 2589, "Display_lang": "Linen Cloth", "OverallQualityID": 1},
+              {"ID": 3, "Display_lang": "Nur Sparse", "OverallQualityID": 2}]
+    items = ea.items_json(item, sparse)
+    assert list(items) == ["1", "3", "2589", "6948"]
+    assert items["6948"] == {"name": "Hearthstone", "icon": 134414, "quality": 1, "classID": 15, "subclassID": 0}
+    assert items["2589"] == {"name": "Linen Cloth", "icon": 132889, "quality": 1, "classID": 7, "subclassID": 5}
+    assert items["1"]["name"] is None and items["3"]["icon"] is None
+
+
+def test_spells_json():
+    namen = [{"ID": 8936, "Name_lang": "Regrowth"}, {"ID": 5, "Name_lang": "Ohne Misc"}]
+    misc = [{"ID": 400000, "SpellID": 8936, "DifficultyID": 0, "SpellIconFileDataID": 999},
+            {"ID": 321073, "SpellID": 8936, "DifficultyID": 0, "SpellIconFileDataID": 136085},
+            {"ID": 100, "SpellID": 8936, "DifficultyID": 2, "SpellIconFileDataID": 1},
+            {"ID": 101, "SpellID": 7, "DifficultyID": 3, "SpellIconFileDataID": 2},
+            {"ID": 102, "SpellID": 7, "DifficultyID": 1, "SpellIconFileDataID": 3}]
+    spells = ea.spells_json(namen, misc)
+    assert spells["8936"] == {"name": "Regrowth", "icon": 136085}
+    assert spells["5"] == {"name": "Ohne Misc", "icon": None} and spells["7"] == {"name": None, "icon": 2}
+
+
+def test_archiv_stichproben():
+    """Fertiges Archiv 1.60.1.70938 gegen wago.tools; fehlt es, wird nichts geprueft."""
+    ordner = os.path.join(ea.ART, "1.60.1.70938")
+    pfade = [os.path.join(ordner, n) for n in ("items.json", "spells.json", "atlas.json")]
+    if not all(os.path.exists(p) for p in pfade):
+        print("  (Archiv fehlt, Stichproben uebersprungen)")
+        return
+    items, spells, atlas = (json.load(open(p, encoding="utf-8")) for p in pfade)
+    assert items["6948"] == {"name": "Hearthstone", "icon": 134414, "quality": 1, "classID": 15, "subclassID": 0}
+    assert items["2589"] == {"name": "Linen Cloth", "icon": 132889, "quality": 1, "classID": 7, "subclassID": 5}
+    assert spells["8936"] == {"name": "Regrowth", "icon": 136085}
+    q = atlas["ui-questpoi-questnumber"]
+    assert (q["width"], q["height"]) == (32, 32), q
+    p = atlas["ui-hud-unitframe-player-portraiton"]
+    assert (p["width"], p["height"], p["pxWidth"]) == (198, 71, 198), p
+    s = atlas["storyheader-bg"]
+    assert (s["width"], s["height"]) == (304, 69), s
 
 
 def test_blp_format():

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Renderer-Tests: Lua-Client (tests/client/*.lua) und Zeichner (tests/test_render.py).
+set -u
+here="$(cd "$(dirname "$0")/.." && pwd)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fail=0
+for t in "$here"/tests/client/*.lua; do
+    luajit "$here/client/main.lua" "$t" "$tmp/out.json" 2>"$tmp/err" || { cat "$tmp/err"; fail=1; continue; }
+    grep "^ok " "$tmp/err"
+    python3 -I - "$tmp/out.json" <<'PY' || fail=1
+import json, sys
+rep = json.load(open(sys.argv[1]))["report"]
+bad = [e for e in rep["errors"] if e.get("phase") == "scenario"]
+for e in bad:
+    print("FEHLER", e["message"])
+sys.exit(1 if bad else 0)
+PY
+done
+"$here/.venv/bin/python" -I "$here/tests/test_render.py" || fail=1
+exit $fail
