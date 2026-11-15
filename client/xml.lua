@@ -206,7 +206,11 @@ end
 local function applyFontAttrs(o, node)
     local a = node.attr
     local s = st(o)
-    if a.font then
+    -- font="GameFontNormal" nennt ein Schriftobjekt, keine Datei.
+    local fo = a.font and rawget(_G, a.font)
+    if type(fo) == "table" and rawget(fo, 0) and st(fo).isFont then
+        if o.SetFontObject then o:SetFontObject(fo) else o:CopyFontObject(fo) end
+    elseif a.font then
         local height = 12
         local fh = child(node, "FontHeight")
         if fh then
@@ -374,6 +378,10 @@ function applyNode(o, node, own)
                     end
                 end
             end
+        elseif tag == "ScrollChild" and s.type == "ScrollFrame" then
+            for _, f in ipairs(c.children) do
+                if FRAME_TAGS[f.tag] or X.intrinsics[f.tag] then o:SetScrollChild(X.BuildFrame(f, o)) end
+            end
         elseif tag == "Frames" and s.isFrame then
             for _, f in ipairs(c.children) do
                 if FRAME_TAGS[f.tag] or X.intrinsics[f.tag] then X.BuildFrame(f, o) end
@@ -526,6 +534,14 @@ end
 
 function X.ApplyTemplate(o, name)
     local t = X.templates[name]
+    -- FontStrings erben Schriftobjekte (inherits="GameFontNormal").
+    if not t and st(o).type == "FontString" then
+        local fo = rawget(_G, name)
+        if type(fo) == "table" and rawget(fo, 0) and st(fo).isFont then
+            o:SetFontObject(fo)
+            return true
+        end
+    end
     if not t then
         R.Missing("template", name)
         return false

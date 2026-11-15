@@ -60,7 +60,7 @@ function R.Error(msg, stack)
         e.count = e.count + 1
         return
     end
-    e = { message = msg, stack = tidy(stack or ""), count = 1, owner = ownerOfSource(msg:match("^([^:]+):")) }
+    e = { message = msg, stack = tidy(stack or ""), count = 1, owner = ownerOfSource(msg:match("^([^:]+):")), phase = R.phase }
     R.errors[msg] = e
     R.errorOrder[#R.errorOrder + 1] = e
 end
@@ -79,7 +79,7 @@ end
 function R.Summary()
     local errs = {}
     for _, e in ipairs(R.errorOrder) do
-        errs[#errs + 1] = { message = e.message, count = e.count, stack = e.stack, owner = e.owner }
+        errs[#errs + 1] = { message = e.message, count = e.count, stack = e.stack, owner = e.owner, phase = e.phase }
     end
     local missing = {}
     for owner, t in pairs(R.missing) do

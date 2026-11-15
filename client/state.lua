@@ -2,7 +2,7 @@
 -- Ruf, Berufe, Taschen, CVars. Die einzelnen Bereiche liegen in api/*.lua.
 local S = {}
 
-S.MODULES = { "core" }
+S.MODULES = { "core", "game", "addons" }
 
 function S.Install(state, env)
     S.state = state

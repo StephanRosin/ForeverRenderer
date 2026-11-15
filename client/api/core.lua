@@ -2,6 +2,7 @@
 -- von Blizzards Grundlagen-Code und den Addons beim Laden gebraucht werden.
 local W = require("widgets")
 local R = require("report")
+local Media = require("media")
 
 local C = {}
 
@@ -46,6 +47,36 @@ function C.Install(state, env)
     _G.GetText = function(token) return _G[token] end
     _G.IsInGlue = function() return false end
     _G.GetGlobalEnvironment = function() return _G end
+    _G.SwapToGlobalEnvironment = function() end
+    -- Farbtexte (C_ColorUtil) wie der Client: "|cAARRGGBB".
+    _G.C_ColorUtil = _G.C_ColorUtil or {}
+    local function byte(v) return math.floor(math.max(0, math.min(1, v or 0)) * 255 + 0.5) end
+    C_ColorUtil.GenerateTextColorCode = function(c)
+        return string.format("%02x%02x%02x%02x", byte(c.a or 1), byte(c.r), byte(c.g), byte(c.b))
+    end
+    C_ColorUtil.WrapTextInColor = function(text, c) return "|c" .. C_ColorUtil.GenerateTextColorCode(c) .. tostring(text) .. "|r" end
+    C_ColorUtil.WrapTextInColorCode = function(text, code) return "|c" .. code .. tostring(text) .. "|r" end
+    -- Spielmodi: in der Doku fehlt das Enum, Forever laeuft als "Standard".
+    Enum.GameMode = Enum.GameMode or { Standard = 0, Plunderstorm = 1, WoWHack = 2 }
+    _G.C_GameRules = _G.C_GameRules or {}
+    C_GameRules.GetActiveGameMode = function() return Enum.GameMode.Standard end
+    C_GameRules.IsGameRuleActive = function() return false end
+    _G.CreateSecureDelegate = function(fn) return fn end
+    _G.SlashCmdList = _G.SlashCmdList or {}
+    _G.hash_SlashCmdList = _G.hash_SlashCmdList or {}
+    math.clamp = function(v, lo, hi) return math.min(math.max(v, lo), hi) end
+    table.count = function(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
+    -- Atlas-Angaben aus dem Grafik-Archiv (atlas.json).
+    _G.C_Texture = _G.C_Texture or {}
+    C_Texture.GetAtlasInfo = function(name)
+        local a = Media.Atlas(name)
+        if not a then return nil end
+        return { width = a.width, height = a.height, leftTexCoord = a.left, rightTexCoord = a.right,
+            topTexCoord = a.top, bottomTexCoord = a.bottom, tilesHorizontally = a.tilesH or false,
+            tilesVertically = a.tilesV or false, file = a.fdid, filename = a.file }
+    end
+    C_Texture.GetFilenameFromFileDataID = function(id) local e = Media.byId[id] return e and e.file end
+    _G.GetFileIDFromPath = function(p) local e = Media.Texture(p) return e and e.fdid end
     _G.SetErrorCallstackHeight = function() end
     _G.GetCallstackHeight = function() return 1 end
     for _, typ in ipairs({ "Frame", "Button", "CheckButton", "EditBox", "Texture", "FontString", "StatusBar", "Slider", "ScrollFrame", "Cooldown", "GameTooltip", "Line", "MaskTexture", "AnimationGroup", "Animation" }) do
@@ -57,7 +88,6 @@ function C.Install(state, env)
     C_Widget.IsFrameWidget = function(o) return type(o) == "table" and rawget(o, 0) ~= nil and W.st(o).isFrame or false end
     C_Widget.IsRenderableWidget = function(o) return type(o) == "table" and rawget(o, 0) ~= nil end
     -- Globale Texte und Farben kommen im Client aus Spieltabellen (DB2).
-    local Media = require("media")
     local U = require("util")
     local strings = Media.artDir and U.readFile(Media.artDir .. "/globalstrings.json")
     if strings then

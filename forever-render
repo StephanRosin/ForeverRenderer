@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Startet die Python-Kommandozeile aus dem eigenen venv (freetype-py).
+here="$(dirname "$(realpath "$0")")"
+py="$here/.venv/bin/python"
+[ -x "$py" ] || { echo "venv fehlt: python3 -m venv --system-site-packages $here/.venv && $here/.venv/bin/pip install freetype-py" >&2; exit 2; }
+exec "$py" -I "$here/render/cli.py" "$@"

@@ -1,0 +1,534 @@
+#!/usr/bin/env python3
+"""UI-Grafik von WoW Forever aus dem lokalen CASC-Speicher ziehen.
+
+    python3 -I tools/extract-art [produkt]      -> ~/Dokumente/wow-ui-source/art/<version>/
+
+Liest nur die CASC-Dateien, startet oder beruehrt den Client nie. Ergebnis:
+  interface/...png, fonts/..., atlas.json, index.json, index.tsv
+Gebaut wird in <version>.tmp (abgebrochene Laeufe setzen dort fort), am Ende
+umbenannt. Gibt es <version>/ schon, passiert nichts; alte Builds bleiben liegen.
+"""
+import csv
+import ctypes
+import io
+import json
+import multiprocessing
+import os
+import shutil
+import struct
+import sys
+import time
+import urllib.request
+
+from PIL import Image
+
+WOW = os.path.expanduser("~/Games/Battlenet/drive_c/Program Files (x86)/World of Warcraft")
+CASCLIB = os.path.expanduser("~/Dokumente/wow-ui-source/casclib/build/libcasc.so")
+ART = os.path.expanduser("~/Dokumente/wow-ui-source/art")
+LISTFILE = os.path.join(ART, "listfile.csv")
+LISTFILE_URL = "https://github.com/wowdev/wow-listfile/releases/latest/download/community-listfile.csv"
+DOWNLOAD_TIMEOUT_S = 300
+JOURNAL = ".fortschritt.tsv"  # pro fertiger Datei eine Zeile, damit ein Abbruch fortsetzbar ist
+ARBEITER = min(8, os.cpu_count() or 1)  # jeder Prozess oeffnet den Speicher selbst (~0.5 GB RAM)
+
+CASC_OPEN_BY_FILEID = 0x3  # CascLib.h, Name ist dann CASC_FILE_DATA_ID(fdid)
+CASC_INVALID_SIZE = 0xFFFFFFFF
+CASC_FEHLER_VERSCHLUESSELT = 1005  # ERROR_FILE_ENCRYPTED: TACT-Schluessel fehlt
+BUILD_INFO_PRODUKT_SPALTE = -1
+BUILD_INFO_VERSION_SPALTE = 12
+
+BILD_ENDUNGEN = (".blp", ".tga", ".png")
+SCHRIFT_ENDUNGEN = (".ttf", ".otf")
+# Massenware ohne Nutzen fuers UI-Rendern; Begruendung landet im Bericht.
+UEBERSPRUNGEN = {
+    "interface/cinematics/": "Filme (avi/mp3), keine Bilder",
+    "interface/glues/models/": "Texturen der 3D-Modelle im Login-Bildschirm, kein 2D-UI",
+    "interface/glues/credits/": "Abspann-Diashow, ~3000 grosse Bilder",
+    "interface/glues/loadingscreens/": "Ladebildschirme, gross und kein Rahmen-UI",
+}
+
+DB2_FDID = {"atlas": 897470, "member": 897532, "element": 1989276}
+GLOBALSTRINGS_FDID = 1394440
+GLOBALCOLOR_FDID = 4328468
+FARBE_KANAL_MAX = 255
+
+# WDC5-Layouts dieses Builds (WoWDBDefs). Je Feld: Name und Typ;
+# "s" = String, "i" = vorzeichenbehaftet, "u" = vorzeichenlos.
+DB2_LAYOUTS = {
+    0x91378408: [("ID", "u"), ("FileDataID", "u"), ("UiTextureAtlasSetID", "u"),
+                 ("AtlasWidth", "u"), ("AtlasHeight", "u"), ("UiCanvasID", "u")],
+    0x75E12F73: [("CommittedName", "s"), ("ID", "u"), ("UiTextureAtlasID", "u"),
+                 ("Width", "i"), ("Height", "i"), ("CommittedLeft", "i"), ("CommittedRight", "i"),
+                 ("CommittedTop", "i"), ("CommittedBottom", "i"), ("UiTextureAtlasElementID", "u"),
+                 ("OverrideWidth", "i"), ("OverrideHeight", "i"), ("CommittedFlags", "i"),
+                 ("UiCanvasID", "u")],
+    0x7CCBD18F: [("Name", "s"), ("ID", "u")],
+    # GlobalStrings/GlobalColor: ID steht in der ID-Liste, nicht im Satz
+    0xD40F6D96: [("BaseTag", "s"), ("TagText_lang", "s"), ("Flags", "u")],
+    0x760E0516: [("LuaConstantName", "s"), ("Color", "u")],
+}
+WDC5_MAGIC = b"WDC5"
+WDC5_HEADER_OFFSET = 136  # nach Magic, Version und 128 Byte Schema-Name
+WDC5_HEADER = struct.Struct("<9I2H7I")
+WDC5_SECTION = struct.Struct("<Q8I")
+WDC5_FIELD_STORAGE = struct.Struct("<HHIIIII")
+WDC5_FLAG_SPARSE = 0x1
+WDC5_FLAG_ID_LIST = 0x4
+WDC_KOMPRESSION_BITS = (0, 1, 5)  # none, bitpacked, bitpacked signed: Wert steht direkt im Datensatz
+WDC_KOMPRESSION_PALLET = 3  # Datensatz haelt Index in den Pallet-Block (u32 je Eintrag)
+
+# CommittedFlags (an "_"- und "!"-Atlanten geprueft, siehe Test)
+ATLAS_FLAG_KACHEL_V = 0x2
+ATLAS_FLAG_KACHEL_H = 0x4
+ATLAS_FLAG_NICHT_KACHELN = 0x10
+
+BLP2_KODIERUNG = {1: "PAL", 2: "DXT", 3: "BGRA"}
+BLP2_DXT = {0: "DXT1", 1: "DXT3", 7: "DXT5"}
+BLP1_KODIERUNG = {0: "JPEG", 1: "PAL"}
+BLP2_ROH = 3
+BLP2_MIP0_OFFSET = 20  # u32 offsets[16] beginnen nach Magic, Typ, 4 Bytes Kodierung, w, h
+
+
+# --- CASC -------------------------------------------------------------------
+
+class Casc:
+    def __init__(self, produkt):
+        self.lib = lib = ctypes.CDLL(CASCLIB)
+        lib.CascOpenStorage.argtypes = [ctypes.c_char_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p)]
+        lib.CascOpenFile.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                     ctypes.POINTER(ctypes.c_void_p)]
+        lib.CascGetFileSize.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+        lib.CascGetFileSize.restype = ctypes.c_uint32
+        lib.CascReadFile.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+        lib.CascCloseFile.argtypes = [ctypes.c_void_p]
+        lib.GetCascError.restype = ctypes.c_uint32
+        self.speicher = ctypes.c_void_p()
+        if not lib.CascOpenStorage(("%s*%s" % (WOW, produkt)).encode(), 0, ctypes.byref(self.speicher)):
+            raise OSError("CASC-Speicher laesst sich nicht oeffnen (Fehler %d)" % lib.GetCascError())
+
+    def _oeffnen(self, fdid):
+        h = ctypes.c_void_p()
+        if not self.lib.CascOpenFile(self.speicher, fdid, 0, CASC_OPEN_BY_FILEID, ctypes.byref(h)):
+            return None
+        return h
+
+    def gibt_es(self, fdid):
+        h = self._oeffnen(fdid)
+        if h is None:
+            return False
+        self.lib.CascCloseFile(h)
+        return True
+
+    def lesen(self, fdid, verschluesselt_mit_nullen=False):
+        """Inhalt als bytes; OSError mit CascLib-Fehlercode, wenn es nicht geht.
+
+        verschluesselt_mit_nullen: fuer DB2, deren letzte Sektion mit einem fehlenden TACT-Schluessel
+        verschluesselt ist. CascLib bricht dort ab (Fehler 1005); der Rest wird mit Nullen aufgefuellt,
+        der DB2-Parser erkennt die leere Sektion und zaehlt sie als uebersprungen."""
+        h = self._oeffnen(fdid)
+        if h is None:
+            raise OSError("CascOpenFile Fehler %d" % self.lib.GetCascError())
+        try:
+            groesse = self.lib.CascGetFileSize(h, None)
+            if groesse == CASC_INVALID_SIZE:
+                raise OSError("Groesse unbekannt (Fehler %d, verschluesselt oder nicht lokal)" % self.lib.GetCascError())
+            puffer, gelesen = ctypes.create_string_buffer(groesse), ctypes.c_uint32()
+            if not self.lib.CascReadFile(h, puffer, groesse, ctypes.byref(gelesen)):
+                raise OSError("CascReadFile Fehler %d" % self.lib.GetCascError())
+            if gelesen.value != groesse:
+                if not (verschluesselt_mit_nullen and self.lib.GetCascError() == CASC_FEHLER_VERSCHLUESSELT):
+                    raise OSError("nur %d von %d Bytes gelesen (Fehler %d)"
+                                  % (gelesen.value, groesse, self.lib.GetCascError()))
+                return puffer.raw[:gelesen.value] + bytes(groesse - gelesen.value)
+            return puffer.raw
+        finally:
+            self.lib.CascCloseFile(h)
+
+
+def version(produkt):
+    with open(os.path.join(WOW, ".build.info"), encoding="utf-8") as f:
+        for zeile in f.read().splitlines()[1:]:
+            felder = zeile.split("|")
+            if felder[BUILD_INFO_PRODUKT_SPALTE] == produkt:
+                return felder[BUILD_INFO_VERSION_SPALTE]
+    sys.exit("Produkt nicht in .build.info: " + produkt)
+
+
+def listfile_laden():
+    """{fdid: originalpfad}. Einmal herunterladen, danach wiederverwenden. Fremddaten: nur als CSV lesen."""
+    if not os.path.exists(LISTFILE):
+        print("Lade Listfile ...", flush=True)
+        os.makedirs(ART, exist_ok=True)
+        with urllib.request.urlopen(LISTFILE_URL, timeout=DOWNLOAD_TIMEOUT_S) as antwort, \
+                open(LISTFILE + ".part", "wb") as f:
+            shutil.copyfileobj(antwort, f)
+        os.rename(LISTFILE + ".part", LISTFILE)
+    namen, kaputt = {}, 0
+    with open(LISTFILE, encoding="utf-8", errors="replace", newline="") as f:
+        for zeile in csv.reader(f, delimiter=";"):
+            if len(zeile) == 2 and zeile[0].isdigit():
+                namen[int(zeile[0])] = zeile[1]
+            else:
+                kaputt += 1
+    if kaputt:
+        print("Listfile: %d unlesbare Zeilen ignoriert" % kaputt)
+    return namen
+
+
+# --- DB2 (WDC5) ---------------------------------------------------------------
+
+def wdc5_lesen(daten):
+    """(Zeilen, Anzahl verschluesselt uebersprungener Saetze). Zeilen sind dicts mit den Feldnamen
+    aus DB2_LAYOUTS plus "ID"; Kopiertabelle aufgeloest."""
+    if daten[:4] != WDC5_MAGIC:
+        raise ValueError("kein WDC5: %r" % daten[:4])
+    (anzahl, feldzahl, satzgroesse, _, _, layout, _, _, _, flags, id_index, _, _, _,
+     storage_groesse, common_groesse, pallet_groesse, sektion_zahl) = WDC5_HEADER.unpack_from(daten, WDC5_HEADER_OFFSET)
+    felder = DB2_LAYOUTS.get(layout)
+    if felder is None or len(felder) != feldzahl:
+        raise ValueError("unbekanntes Layout %08X mit %d Feldern, DB2_LAYOUTS nachfuehren" % (layout, feldzahl))
+    # shortcut: keine Sparse-Tabellen und keine Common-Daten, wie in 1.60.1; bei Bedarf erst erweitern
+    if flags & WDC5_FLAG_SPARSE or common_groesse:
+        raise ValueError("Aufbau nicht unterstuetzt: Flags %#x, Common-Daten %d" % (flags, common_groesse))
+    pos = WDC5_HEADER_OFFSET + WDC5_HEADER.size
+    sektionen = [WDC5_SECTION.unpack_from(daten, pos + i * WDC5_SECTION.size) for i in range(sektion_zahl)]
+    pos += sektion_zahl * WDC5_SECTION.size + 4 * feldzahl
+    speicher = [WDC5_FIELD_STORAGE.unpack_from(daten, pos + i * WDC5_FIELD_STORAGE.size) for i in range(feldzahl)]
+    if storage_groesse != feldzahl * WDC5_FIELD_STORAGE.size:
+        raise ValueError("Feldspeicher-Groesse %d passt nicht zu %d Feldern" % (storage_groesse, feldzahl))
+    pallet_start = pos + storage_groesse
+    pallet_offset, offset = [], 0  # Pallet-Block je Feld liegt hintereinander
+    for (name, _), (_, _, zusatz, kompression, *_) in zip(felder, speicher):
+        if kompression not in WDC_KOMPRESSION_BITS + (WDC_KOMPRESSION_PALLET,):
+            raise ValueError("Feld %s: Kompression %d nicht unterstuetzt" % (name, kompression))
+        pallet_offset.append(pallet_start + offset)
+        offset += zusatz if kompression == WDC_KOMPRESSION_PALLET else 0
+    if offset != pallet_groesse:
+        raise ValueError("Pallet-Groesse %d statt %d" % (offset, pallet_groesse))
+
+    # Strings: Offset zaehlt ab der Feldstelle im Satz, ueber alle Sektionen hinweg; die
+    # String-Tabellen der Sektionen bilden zusammen einen Block hinter allen Saetzen.
+    string_bloecke, ende = [], 0
+    for _, satz_start, n, string_groesse, *_ in sektionen:
+        string_bloecke.append((ende, satz_start + n * satzgroesse, string_groesse))
+        ende += string_groesse
+
+    def string_lesen(global_pos):
+        for start, datei_pos, groesse in string_bloecke:
+            if start <= global_pos < start + groesse:
+                p = datei_pos + global_pos - start
+                return daten[p:daten.index(b"\0", p)].decode("utf-8")
+        raise ValueError("String-Offset %d ausserhalb der Tabellen" % global_pos)
+
+    zeilen, verschluesselt, global_index = [], 0, 0
+    for tact, satz_start, n, string_groesse, _, id_groesse, _, _, kopien in sektionen:
+        saetze_ende = satz_start + n * satzgroesse
+        if tact and not any(daten[satz_start:saetze_ende]):
+            # Sektion mit TACT-Schluessel, den der Client nicht hat: CascLib liefert dafuer nichts
+            verschluesselt += n
+            global_index += n
+            continue
+        id_start = saetze_ende + string_groesse
+        if flags & WDC5_FLAG_ID_LIST and id_groesse != 4 * n:
+            raise ValueError("ID-Liste %d Bytes fuer %d Saetze" % (id_groesse, n))
+        sektion_zeilen = []
+        for i in range(n):
+            satz = satz_start + i * satzgroesse
+            bits = int.from_bytes(daten[satz:satz + satzgroesse], "little")
+            zeile = {}
+            for f, ((name, typ), (bit_pos, bit_breite, _, kompression, *_)) in enumerate(zip(felder, speicher)):
+                wert = (bits >> bit_pos) & ((1 << bit_breite) - 1)
+                if kompression == WDC_KOMPRESSION_PALLET:
+                    wert = struct.unpack_from("<I", daten, pallet_offset[f] + 4 * wert)[0]
+                    bit_breite = 32
+                if typ == "i" and wert >> (bit_breite - 1):
+                    wert -= 1 << bit_breite
+                elif typ == "s":
+                    # 0 = leerer String (kommt bei Members vor, z. B. ID 14323)
+                    wert = string_lesen((global_index + i - anzahl) * satzgroesse + bit_pos // 8 + wert) if wert else ""
+                zeile[name] = wert
+            if flags & WDC5_FLAG_ID_LIST:
+                zeile["ID"] = struct.unpack_from("<I", daten, id_start + 4 * i)[0]
+            elif "ID" not in zeile:
+                zeile["ID"] = zeile[felder[id_index][0]]
+            sektion_zeilen.append(zeile)
+        kopie_start = id_start + id_groesse
+        nach_id = {z["ID"]: z for z in sektion_zeilen}
+        for k in range(kopien):
+            neu, alt = struct.unpack_from("<2I", daten, kopie_start + 8 * k)
+            sektion_zeilen.append(dict(nach_id[alt], ID=neu))
+        zeilen += sektion_zeilen
+        global_index += n
+    return zeilen, verschluesselt
+
+
+def atlas_eintrag(member, atlas, datei):
+    """Ein atlas.json-Eintrag: Pixelgroesse und normierte Texturkoordinaten."""
+    breite = member["OverrideWidth"] or member["CommittedRight"] - member["CommittedLeft"]
+    hoehe = member["OverrideHeight"] or member["CommittedBottom"] - member["CommittedTop"]
+    flags = member["CommittedFlags"]
+    kacheln = not flags & ATLAS_FLAG_NICHT_KACHELN
+    return {
+        "file": datei, "fdid": atlas["FileDataID"], "width": breite, "height": hoehe,
+        "left": member["CommittedLeft"] / atlas["AtlasWidth"], "right": member["CommittedRight"] / atlas["AtlasWidth"],
+        "top": member["CommittedTop"] / atlas["AtlasHeight"], "bottom": member["CommittedBottom"] / atlas["AtlasHeight"],
+        "tilesH": kacheln and bool(flags & ATLAS_FLAG_KACHEL_H),
+        "tilesV": kacheln and bool(flags & ATLAS_FLAG_KACHEL_V),
+    }
+
+
+def atlanten_lesen(casc):
+    tabellen = {}
+    for n, fdid in DB2_FDID.items():
+        tabellen[n], verschluesselt = wdc5_lesen(casc.lesen(fdid))
+        if verschluesselt:
+            raise ValueError("%s: %d verschluesselte Saetze" % (n, verschluesselt))
+    atlanten = {a["ID"]: a for a in tabellen["atlas"]}
+    elemente = {e["ID"]: e["Name"] for e in tabellen["element"]}
+    return atlanten, elemente, tabellen["member"]
+
+
+def atlas_json(atlanten, elemente, members, datei_von_fdid):
+    """Name (klein) -> Eintrag.
+
+    Schluessel ist der Element-Name (den SetAtlas kennt). Ein Element kann mehrere Members haben
+    (umgepackte Atlanten): vorhandene Textur gewinnt, dann die hoechste ID. Abweichende
+    CommittedNames kommen als zusaetzliche Namen dazu, ueberschreiben aber nie einen Element-Namen.
+    """
+    ergebnis, probleme = {}, {"doppelt": 0, "aliase": 0, "ohne_textur": [], "ohne_atlas": []}
+    sortiert = sorted(members, key=lambda m: m["ID"])
+    for durchgang in ("element", "committed"):
+        element_namen = set(ergebnis)
+        for m in sortiert:
+            if durchgang == "element":
+                name = (elemente.get(m["UiTextureAtlasElementID"]) or m["CommittedName"]).lower()
+            else:
+                name = m["CommittedName"].lower()
+                if name in element_namen:
+                    continue
+            atlas = atlanten.get(m["UiTextureAtlasID"])
+            if not name:
+                continue
+            if atlas is None:
+                probleme["ohne_atlas"].append(name)
+                continue
+            datei = datei_von_fdid.get(atlas["FileDataID"])
+            if name in ergebnis:
+                probleme["doppelt"] += durchgang == "element"
+                if datei is None and ergebnis[name]["file"] is not None:
+                    continue
+            elif durchgang == "committed":
+                probleme["aliase"] += 1
+            ergebnis[name] = atlas_eintrag(m, atlas, datei)
+    probleme["ohne_textur"] = sorted(n for n, e in ergebnis.items() if e["file"] is None)
+    return ergebnis, probleme
+
+
+def farbe(argb):
+    """GlobalColor.Color ist 0xAARRGGBB (an NORMAL_FONT_COLOR = 1/0.82/0 geprueft)."""
+    a, r, g, b = argb.to_bytes(4, "big")
+    return {"r": r / FARBE_KANAL_MAX, "g": g / FARBE_KANAL_MAX, "b": b / FARBE_KANAL_MAX, "a": a / FARBE_KANAL_MAX}
+
+
+def globale_schreiben(casc, ordner):
+    """globalstrings.json und globalcolors.json; liefert Berichtszeilen. Die Speicher-Sprache
+    ist die installierte Textsprache (bei wowf nur enUS)."""
+    zeilen, verschluesselt = wdc5_lesen(casc.lesen(GLOBALSTRINGS_FDID, verschluesselt_mit_nullen=True))
+    strings = {z["BaseTag"]: z["TagText_lang"] for z in sorted(zeilen, key=lambda z: z["ID"])}
+    farben_zeilen, farben_verschluesselt = wdc5_lesen(casc.lesen(GLOBALCOLOR_FDID, verschluesselt_mit_nullen=True))
+    farben = [dict(baseTag=z["LuaConstantName"], **farbe(z["Color"])) for z in sorted(farben_zeilen, key=lambda z: z["ID"])]
+    for name, daten in (("globalstrings.json", strings), ("globalcolors.json", farben)):
+        with open(os.path.join(ordner, name + ".part"), "w", encoding="utf-8") as f:
+            json.dump(daten, f, indent=1, ensure_ascii=False)
+        os.replace(os.path.join(ordner, name + ".part"), os.path.join(ordner, name))
+    return ["GlobalStrings: %d (%d doppelte BaseTags, %d verschluesselte Saetze uebersprungen)"
+            % (len(strings), len(zeilen) - len(strings), verschluesselt),
+            "GlobalColor: %d (%d verschluesselte Saetze uebersprungen)" % (len(farben), farben_verschluesselt)]
+
+
+# --- Bilder -----------------------------------------------------------------
+
+def blp_format(daten):
+    if daten[:4] == b"BLP2":
+        kodierung, _, alpha_typ = daten[8], daten[9], daten[10]
+        art = BLP2_KODIERUNG.get(kodierung, "?%d" % kodierung)
+        return "BLP2/" + (BLP2_DXT.get(alpha_typ, "DXT?%d" % alpha_typ) if art == "DXT" else art)
+    if daten[:4] == b"BLP1":
+        return "BLP1/" + BLP1_KODIERUNG.get(struct.unpack_from("<I", daten, 4)[0], "?")
+    raise ValueError("kein BLP: %r" % daten[:4])
+
+
+def blp2_roh(daten):
+    """BLP2 Kodierung 3 (unkomprimiert BGRA), die Pillow nicht kennt."""
+    alpha_tiefe = daten[9]
+    breite, hoehe = struct.unpack_from("<2I", daten, 12)
+    start = struct.unpack_from("<I", daten, BLP2_MIP0_OFFSET)[0]
+    bild = Image.frombytes("RGBA", (breite, hoehe), daten[start:start + breite * hoehe * 4], "raw", "BGRA")
+    return bild if alpha_tiefe else bild.convert("RGB")
+
+
+def bild_laden(daten, quelle):
+    if quelle.lower().endswith(".blp"):
+        fmt = blp_format(daten)
+        if fmt == "BLP2/BGRA" and daten[8] == BLP2_ROH:
+            return blp2_roh(daten), fmt
+        bild = Image.open(io.BytesIO(daten), formats=["BLP"])
+    else:
+        bild = Image.open(io.BytesIO(daten), formats=["TGA", "PNG"])
+        fmt = bild.format
+    bild.load()
+    return bild, fmt
+
+
+_casc = None
+
+
+def _arbeiter_start(produkt):
+    global _casc
+    _casc = Casc(produkt)
+
+
+def umwandeln(auftrag):
+    """(fdid, quelle, ziel_rel, ziel_abs) -> ("ok", Indexeintrag) oder ("fehler", Text)."""
+    fdid, quelle, rel, ziel = auftrag
+    try:
+        bild, fmt = bild_laden(_casc.lesen(fdid), quelle)
+        os.makedirs(os.path.dirname(ziel), exist_ok=True)
+        bild.save(ziel + ".part", "PNG")
+        os.replace(ziel + ".part", ziel)
+        return "ok", {"rel": rel, "fdid": fdid, "w": bild.width, "h": bild.height, "fmt": fmt, "src": quelle}
+    except Exception as fehler:  # jede Datei einzeln zaehlen statt den Lauf abzubrechen
+        return "fehler", "%s (%d): %s" % (quelle, fdid, fehler)
+
+
+def png_pfad(quelle):
+    return os.path.splitext(quelle.lower().replace("\\", "/"))[0] + ".png"
+
+
+def uebersprungen(pfad):
+    return next((p for p in UEBERSPRUNGEN if pfad.startswith(p)), None)
+
+
+# --- Ablauf -----------------------------------------------------------------
+
+def journal_laden(tmp):
+    fertig = {}
+    pfad = os.path.join(tmp, JOURNAL)
+    if os.path.exists(pfad):
+        with open(pfad, encoding="utf-8") as f:
+            for zeile in f:
+                e = json.loads(zeile)
+                if os.path.exists(os.path.join(tmp, e["rel"])):
+                    fertig[e["rel"]] = e
+    return fertig
+
+
+def main():
+    produkt = sys.argv[1] if len(sys.argv) > 1 else "wowf"
+    ziel = os.path.join(ART, version(produkt))
+    if os.path.exists(ziel):
+        # spaeter dazugekommene Tabellen in fertigen Archiven nachtragen, sonst nichts tun
+        if not all(os.path.exists(os.path.join(ziel, n)) for n in ("globalstrings.json", "globalcolors.json")):
+            print("\n".join(globale_schreiben(Casc(produkt), ziel)))
+        print("Schon vollstaendig: " + ziel)
+        return
+    beginn = time.time()
+    tmp = ziel + ".tmp"
+    os.makedirs(tmp, exist_ok=True)
+    namen = listfile_laden()
+    casc = Casc(produkt)
+
+    # Bilder unter Interface/, die es in diesem Speicher gibt
+    auftraege, skip_zaehler, fehlt = {}, {p: 0 for p in UEBERSPRUNGEN}, 0
+    for fdid, quelle in namen.items():
+        klein = quelle.lower()
+        if not klein.startswith("interface/") or not klein.endswith(BILD_ENDUNGEN):
+            continue
+        if not casc.gibt_es(fdid):
+            fehlt += 1
+            continue
+        prefix = uebersprungen(klein)
+        if prefix:
+            skip_zaehler[prefix] += 1
+            continue
+        auftraege[png_pfad(quelle)] = (fdid, quelle)
+
+    # Atlas-Texturen ausserhalb von Interface/ oder ohne Listfile-Namen trotzdem mitnehmen
+    atlanten, elemente, members = atlanten_lesen(casc)
+    datei_von_fdid = {fdid: rel for rel, (fdid, _) in auftraege.items()}
+    for a in atlanten.values():
+        fdid = a["FileDataID"]
+        if fdid in datei_von_fdid or not casc.gibt_es(fdid):
+            continue
+        quelle = namen.get(fdid, "unbenannt/%d.blp" % fdid)
+        auftraege[png_pfad(quelle)] = (fdid, quelle)
+        datei_von_fdid[fdid] = png_pfad(quelle)
+
+    fertig = journal_laden(tmp)
+    offen = [(fdid, q, rel, os.path.join(tmp, rel)) for rel, (fdid, q) in auftraege.items() if rel not in fertig]
+    print("%d Bilder, davon %d schon fertig, %d offen" % (len(auftraege), len(fertig), len(offen)), flush=True)
+    fehler = []
+    with open(os.path.join(tmp, JOURNAL), "a", encoding="utf-8") as journal, \
+            multiprocessing.Pool(ARBEITER, _arbeiter_start, (produkt,)) as pool:
+        for n, (status, wert) in enumerate(pool.imap_unordered(umwandeln, offen, chunksize=64), 1):
+            if status == "ok":
+                fertig[wert["rel"]] = wert
+                journal.write(json.dumps(wert) + "\n")
+            else:
+                fehler.append(wert)
+            if n % 5000 == 0:
+                journal.flush()
+                print("  %d/%d (%d Fehler)" % (n, len(offen), len(fehler)), flush=True)
+
+    # Schriften
+    schriften = 0
+    for fdid, quelle in namen.items():
+        klein = quelle.lower()
+        if klein.startswith("fonts/") and klein.endswith(SCHRIFT_ENDUNGEN) and casc.gibt_es(fdid):
+            try:
+                daten = casc.lesen(fdid)
+            except OSError as f:
+                fehler.append("%s (%d): %s" % (quelle, fdid, f))
+                continue
+            os.makedirs(os.path.join(tmp, "fonts"), exist_ok=True)
+            with open(os.path.join(tmp, "fonts", os.path.basename(klein)), "wb") as f:
+                f.write(daten)
+            schriften += 1
+
+    # Atlas und Index: nur Dateien, die wirklich als PNG vorliegen
+    datei_von_fdid = {e["fdid"]: rel for rel, e in fertig.items()}
+    atlas, probleme = atlas_json(atlanten, elemente, members, datei_von_fdid)
+    with open(os.path.join(tmp, "atlas.json"), "w", encoding="utf-8") as f:
+        json.dump(atlas, f, indent=1, sort_keys=True)
+    bericht_globale = globale_schreiben(casc, tmp)
+    index = {rel: {k: e[k] for k in ("fdid", "w", "h", "fmt", "src")} for rel, e in sorted(fertig.items())}
+    with open(os.path.join(tmp, "index.json"), "w", encoding="utf-8") as f:
+        json.dump({"files": index}, f, indent=1)
+    with open(os.path.join(tmp, "index.tsv"), "w", encoding="utf-8") as f:
+        for rel, e in index.items():
+            f.write("%d\t%s\t%s\t%d\t%d\n" % (e["fdid"], rel[:-len(".png")], rel, e["w"], e["h"]))
+
+    print("\nBilder: %d PNG, Schriften: %d, Atlanten: %d" % (len(fertig), schriften, len(atlas)))
+    print("\n".join(bericht_globale))
+    print("Im Listfile, aber nicht in diesem Speicher: %d" % fehlt)
+    for prefix, anzahl in skip_zaehler.items():
+        print("Uebersprungen %s: %d (%s)" % (prefix, anzahl, UEBERSPRUNGEN[prefix]))
+    print("Atlas: %d Members teilen sich ein Element (vorhandene Textur, dann hoechste ID gewinnt), "
+          "%d CommittedNames als Zusatznamen, %d ohne Textur, %d ohne Atlas-Zeile"
+          % (probleme["doppelt"], probleme["aliase"], len(probleme["ohne_textur"]), len(probleme["ohne_atlas"])))
+    if probleme["ohne_textur"]:
+        print("  ohne Textur z. B.: " + ", ".join(probleme["ohne_textur"][:5]))
+    if fehler:
+        # bleibt im Archiv, denn der fertige Ordner wird nicht noch einmal angefasst
+        with open(os.path.join(tmp, "fehler.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(fehler) + "\n")
+        print("NICHT LESBAR/UMWANDELBAR: %d (Liste in fehler.txt), z. B.:" % len(fehler))
+        for f in fehler[:8]:
+            print("  " + f)
+    os.remove(os.path.join(tmp, JOURNAL))
+    os.rename(tmp, ziel)
+    print("-> %s (%.0f s)" % (ziel, time.time() - beginn))
+
+
+if __name__ == "__main__":
+    main()

@@ -5,6 +5,7 @@ local W = require("widgets")
 local L = require("layout")
 local Font = require("font")
 local Media = require("media")
+local R = require("report")
 
 local D = {}
 local st = W.st
@@ -312,7 +313,8 @@ function D.Collect()
     for _, e in ipairs(frames) do
         if frameDrawn(e.frame) then
             local hovered = W.hovered and W.hovered[e.frame]
-            frameItems(e.frame, items, nil, e.clip, hovered)
+            -- Ein Fehler beim Zeichnen eines Rahmens kostet nur diesen Rahmen (steht im Bericht).
+            R.Call(frameItems, e.frame, items, nil, e.clip, hovered)
         end
     end
     return items

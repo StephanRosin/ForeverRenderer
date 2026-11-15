@@ -166,6 +166,7 @@ local function normPoint(p)
 end
 
 local function resolveRel(rel)
+    if type(rel) == "boolean" then return nil end -- SetAllPoints(true): Elternrahmen
     if type(rel) == "string" then
         local o = rawget(_G, rel)
         if o == nil then return nil, true end
