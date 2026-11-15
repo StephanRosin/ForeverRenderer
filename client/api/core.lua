@@ -61,6 +61,15 @@ function C.Install(state, env)
     _G.C_GameRules = _G.C_GameRules or {}
     C_GameRules.GetActiveGameMode = function() return Enum.GameMode.Standard end
     C_GameRules.IsGameRuleActive = function() return false end
+    -- Spielregeln fehlen in der Doku; jede gefragte Regel bekommt eine eigene Zahl (inaktiv).
+    if not rawget(Enum, "GameRule") then
+        local n = 0
+        Enum.GameRule = setmetatable({}, { __index = function(t, k)
+            n = n + 1
+            rawset(t, k, n)
+            return n
+        end })
+    end
     _G.CreateSecureDelegate = function(fn) return fn end
     _G.SlashCmdList = _G.SlashCmdList or {}
     _G.hash_SlashCmdList = _G.hash_SlashCmdList or {}

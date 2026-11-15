@@ -81,6 +81,20 @@ end
 
 function L.Compute(o, s)
     local es = L.EffectiveScale(o)
+    -- Fuellung eines StatusBar: der Client legt sie selbst ueber den gefuellten Teil.
+    local bar = s.statusBar
+    if bar and st(bar).barTex == o then
+        local br = L.Rect(bar)
+        if not br then return nil end
+        local bs = st(bar)
+        local frac = package.loaded.widgets.BarFraction(bar)
+        if bs.orientation == "VERTICAL" then
+            local h = br[4] * frac
+            return { br[1], bs.reverse and (br[2] + br[4] - h) or br[2], br[3], h }
+        end
+        local w = br[3] * frac
+        return { bs.reverse and (br[1] + br[3] - w) or br[1], br[2], w, br[4] }
+    end
     -- Kind eines ScrollFrames: liegt an dessen linker oberer Ecke, um den Bildlauf versetzt.
     if s.scrollParent then
         local ps = st(s.scrollParent)

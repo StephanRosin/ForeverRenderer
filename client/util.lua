@@ -79,9 +79,13 @@ function U.exists(path)
 end
 
 -- Verzeichnisinhalt (nur Namen); ls ist hier verlaesslicher als lfs, das fehlt.
+function U.shellQuote(s)
+    return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
 function U.listDir(path)
     local out = {}
-    local p = io.popen('ls -1 "' .. path .. '" 2>/dev/null')
+    local p = io.popen("ls -1 " .. U.shellQuote(path) .. " 2>/dev/null")
     for line in p:lines() do out[#out + 1] = line end
     p:close()
     return out

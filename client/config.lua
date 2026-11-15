@@ -5,6 +5,8 @@ local U = require("util")
 local C = {}
 local HOME = os.getenv("HOME")
 local DOCS = HOME .. "/Dokumente"
+-- Repo-Wurzel: Ordner ueber client/.
+C.ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*)/client/[^/]+$") or "."
 C.UI_SOURCE_ROOT = os.getenv("FOREVER_UI_SOURCE") or (DOCS .. "/wow-ui-source")
 C.ART_ROOT = os.getenv("FOREVER_ART") or (DOCS .. "/wow-ui-source/art")
 -- Forever-Linie: Schnappschuesse heissen 1.60.1.<build>.
@@ -49,12 +51,19 @@ end
 -- wird zur Laufzeit gesucht, damit kein Kontoname im Code steht.
 C.WTF_ACCOUNT_ROOT = HOME .. "/Games/Battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/WTF/Account"
 
+-- Das zuletzt benutzte Konto: der Ordner mit der juengsten Datei.
 function C.WtfSavedDir()
+    local best, bestTime
     for _, name in ipairs(U.listDir(C.WTF_ACCOUNT_ROOT)) do
         local dir = C.WTF_ACCOUNT_ROOT .. "/" .. name .. "/SavedVariables"
-        if name ~= "SavedVariables" and U.exists(dir) then return dir end
+        if name ~= "SavedVariables" and U.exists(dir) then
+            local p = io.popen("stat -c %Y " .. U.shellQuote(dir) .. "/*.lua 2>/dev/null | sort -n | tail -1")
+            local t = tonumber(p:read("*a")) or 0
+            p:close()
+            if not bestTime or t > bestTime then best, bestTime = dir, t end
+        end
     end
-    return nil
+    return best
 end
 
 C.BLIZZARD_ADDONS = {

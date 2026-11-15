@@ -24,6 +24,11 @@ if not scenarioPath or not outPath then
 end
 
 local scn = assert(dofile(scenarioPath), "Szenario liefert keine Tabelle")
+-- extends = "compare/_base": Felder des Basisszenarios, eigene gewinnen.
+if scn.extends then
+    local base = assert(dofile(Config.ROOT .. "/scenarios/" .. scn.extends .. ".lua"), "Basisszenario fehlt")
+    for k, v in pairs(base) do if scn[k] == nil then scn[k] = v end end
+end
 local screen = scn.screen or Config.DEFAULT_SCREEN
 L.SetScreen(screen[1], screen[2])
 

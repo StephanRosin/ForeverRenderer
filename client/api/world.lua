@@ -322,14 +322,38 @@ local function installQuests()
     C_SuperTrack.SetSuperTrackedQuestID = function(id) state.superTracked = id end
     C_SuperTrack.ClearAllSuperTracked = function() state.superTracked = 0 end
     _G.GetQuestLogSpecialItemInfo = function() return nil end
+    -- "Laternenscherben: 3/8" wie der Client; kind/finished aus dem Szenario.
+    _G.GetQuestLogLeaderBoard = function(i, logIndex)
+        local q = quests[logIndex or state.selectedLogIndex or 0]
+        local o = q and q.objectives and q.objectives[i]
+        if not o then return nil end
+        local finished = o.finished or (o.have and o.need and o.have >= o.need) or false
+        return o.text, o.type or "monster", finished
+    end
     _G.GetNumQuestLeaderBoards = function(i) local q = quests[i] return q and #(q.objectives or {}) or 0 end
 end
 
 local function installMisc()
+    _G.RegisterStaticConstants = function(t) return t end
+    _G.C_DateAndTime = _G.C_DateAndTime or {}
+    C_DateAndTime.GetCurrentCalendarTime = function()
+        local t = os.date("!*t", _G.time())
+        return { year = t.year, month = t.month, monthDay = t.day, weekday = t.wday, hour = t.hour, minute = t.min }
+    end
     _G.C_ClassTalents = _G.C_ClassTalents or {}
     C_ClassTalents.HasUnspentTalentPoints = function() return (state.unspentTalents or 0) > 0 end
     _G.C_TradeSkillUI = _G.C_TradeSkillUI or {}
     C_TradeSkillUI.GetRecipesTracked = function() return {} end
+    -- Fertigkeitslinien der Berufe (Blizzards Constants.lua baut daraus Tabellen).
+    local SKILL_LINES = { FirstAid = 129, Blacksmithing = 164, Leatherworking = 165, Alchemy = 171, Herbalism = 182,
+        Cooking = 185, Mining = 186, Tailoring = 197, Engineering = 202, Enchanting = 333, Fishing = 356, Skinning = 393,
+        Jewelcrafting = 755, Inscription = 773, Archaeology = 794 }
+    local byEnum = {}
+    for name, id in pairs(SKILL_LINES) do
+        local e = Enum.Profession and Enum.Profession[name]
+        if e then byEnum[e] = id end
+    end
+    C_TradeSkillUI.GetProfessionSkillLineID = function(p) return byEnum[p] end
     _G.IsPVPTimerRunning = function() return false end
     _G.GetPVPTimer = function() return 0 end
     _G.C_EventUtils = _G.C_EventUtils or {}

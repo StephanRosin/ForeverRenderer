@@ -9,8 +9,14 @@ local D = { systems = {}, scriptObjects = {}, events = {}, enums = {}, constants
 
 -- Zwei Durchgaenge: Konstanten verweisen beim Laden auf Enum.*, die erst
 -- aus allen Dateien zusammen entstehen.
+-- Globale, die der Client in C setzt und die Doku-Konstanten als Wert nennen.
+-- shortcut: Werte wie Mainline (4 Taschen, 1 Reagenzientasche); im Spiel mit
+-- /dump NUM_REAGENTBAG_SLOTS gegenpruefen, falls Taschen-Anzeigen abweichen.
+D.C_GLOBALS = { NUM_BAG_SLOTS = 4, NUM_REAGENTBAG_SLOTS = 1, NUM_CHARACTERBANK_SLOTS = 6, NUM_ACCOUNTBANK_SLOTS = 5 }
+
 local function loadAll(dir, enumTable, constTable)
     local tables = {}
+    for k, v in pairs(D.C_GLOBALS) do rawset(_G, k, v) end
     local env = setmetatable({
         Enum = enumTable,
         Constants = constTable,

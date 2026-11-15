@@ -456,18 +456,20 @@ function Bar:SetMinMaxValues(lo, hi)
     local s = st(self)
     s.min, s.max = num(lo, 0), num(hi, 1)
     if s.value then s.value = math.max(s.min, math.min(s.max, s.value)) end
+    L.Touch()
 end
 function Bar:GetMinMaxValues() local s = st(self) return s.min or 0, s.max or 1 end
 function Bar:SetValue(v)
     local s = st(self)
     v = num(v, 0)
     s.value = math.max(s.min or 0, math.min(s.max or 1, v))
+    L.Touch() -- die Fuellung (GetStatusBarTexture) aendert ihre Breite
     W.Fire(self, "OnValueChanged", s.value, false)
 end
 function Bar:GetValue() return st(self).value or 0 end
-function Bar:SetOrientation(o) st(self).orientation = o end
+function Bar:SetOrientation(o) st(self).orientation = o L.Touch() end
 function Bar:GetOrientation() return st(self).orientation or "HORIZONTAL" end
-function Bar:SetReverseFill(v) st(self).reverse = not not Sec.Unwrap(v) end
+function Bar:SetReverseFill(v) st(self).reverse = not not Sec.Unwrap(v) L.Touch() end
 function Bar:GetReverseFill() return not not st(self).reverse end
 function Bar:SetFillStyle(v) st(self).fillStyle = v end
 function Bar:GetFillStyle() return st(self).fillStyle or "STANDARD" end
