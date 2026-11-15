@@ -156,6 +156,15 @@ function G.Install(st, env)
     _G.UnitIsConnected = function(u) local x = resolve(u) return x and x.connected ~= false end
     _G.UnitIsPlayer = function(u) local x = resolve(u) return x and (x.isPlayer ~= false and x.npcID == nil) or false end
     _G.UnitPlayerControlled = _G.UnitIsPlayer
+    -- Das runde 2D-Bild: statt des Gesichts das Ersatzbild des Clients
+    -- (TemporaryPortrait je Volk, sonst Monster), rund wie das echte.
+    _G.SetPortraitTexture = function(tex, u)
+        local x = resolve(u)
+        if not x then return end
+        local race = _G.UnitIsPlayer(u) and tostring(x.race or "Human"):lower():gsub("undead", "scourge")
+        local base = "Interface\\CharacterFrame\\TemporaryPortrait-"
+        if not (race and tex:SetTexture(base .. "Male-" .. race)) then tex:SetTexture(base .. "Monster") end
+    end
     _G.UnitIsAFK = function(u) local x = resolve(u) return x and x.afk or false end
     _G.UnitIsDND = function() return false end
     _G.UnitIsPVP = function(u) local x = resolve(u) return x and x.pvp or false end
