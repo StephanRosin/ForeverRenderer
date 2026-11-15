@@ -66,6 +66,17 @@ function C.WtfSavedDir()
     return best
 end
 
+-- Figurbezogene SavedVariables der zuletzt gespielten Figur (juengste Datei).
+function C.WtfCharSavedDir()
+    local acct = C.WtfSavedDir()
+    if not acct then return nil end
+    local root = acct:gsub("/SavedVariables$", "")
+    local p = io.popen("ls -t " .. U.shellQuote(root) .. "/*/*/SavedVariables/*.lua 2>/dev/null | head -1")
+    local newest = p:read("*l")
+    p:close()
+    return newest and newest:match("^(.*)/[^/]+$")
+end
+
 C.BLIZZARD_ADDONS = {
     "Blizzard_SharedXMLBase",
     "Blizzard_Fonts_Shared",

@@ -63,17 +63,16 @@ R.phase = "addons"
 local function savedFor(name)
     local out = {}
     if scn.wtf then
-        local dir = Config.WtfSavedDir()
-        local src = dir and U.readFile(dir .. "/" .. name .. ".lua")
-        if src then
-            local env = {}
-            local chunk = loadstring(src, "=WTF/" .. name)
+        local dirs = { Config.WtfSavedDir(), Config.WtfCharSavedDir() }
+        if not dirs[1] then R.Note("WTF-Ordner nicht gefunden") end
+        for _, dir in ipairs(dirs) do
+            local src = U.readFile(dir .. "/" .. name .. ".lua")
+            local chunk = src and loadstring(src, "=WTF/" .. name)
             if chunk then
+                local env = {}
                 setfenv(chunk, env)
                 if pcall(chunk) then for k, v in pairs(env) do out[k] = v end end
             end
-        elseif not dir then
-            R.Note("WTF-Ordner nicht gefunden")
         end
     end
     for k, v in pairs(scn.saved and scn.saved[name] or {}) do out[k] = v end

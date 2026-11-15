@@ -11,7 +11,7 @@ return {
     wtf = true,
     state = {
         money = 3025555, zone = "Stormwind City", xp = 61000, xpMax = 100000,
-        units = { target = { name = "Ausbildungsattrappe", level = 60, health = 30000, healthMax = 50000, hostile = true, npcID = 31146, classification = "elite" } },
+        units = { player = { level = 57 }, target = { name = "Ausbildungsattrappe", level = 60, health = 30000, healthMax = 50000, hostile = true, npcID = 31146, classification = "elite" } },
         quests = {
             { title = "Eastern Kingdoms", isHeader = true },
             { title = "Die verlorene Laterne", questID = 90001, level = 58, watched = true,
