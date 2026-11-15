@@ -23,8 +23,11 @@ function D.Full()
     return {
         money = 12345678, xp = 61000, xpMax = 100000, restedXP = 20000, zone = "Elwynn Forest", subzone = "Goldshire",
         units = {
-            player = { name = "Testfigur", class = "PRIEST", level = 57, health = 3100, healthMax = 4200, power = 3500, powerMax = 5000 },
+            player = { name = "Testfigur", class = "PRIEST", level = 57, health = 3100, healthMax = 4200, power = 3500, powerMax = 5000,
+                auras = { { spellId = 10938, duration = 1800, elapsed = 600, fromPlayer = true }, { spellId = 139, duration = 15, elapsed = 4, fromPlayer = true },
+                    { spellId = 17, duration = 30, elapsed = 10, fromPlayer = true }, { spellId = 11426, duration = 60, elapsed = 50, harmful = true, dispel = "Magic" } } },
             target = { name = "Ausbildungsattrappe", level = 60, health = 30000, healthMax = 50000, hostile = true, npcID = 31146, classification = "elite",
+                auras = { { spellId = 10894, duration = 24, elapsed = 6, harmful = true, fromPlayer = true }, { spellId = 10890, duration = 8, elapsed = 2, harmful = true, count = 3 } },
                 casting = { name = "Schattenblitz", duration = 2.5, elapsed = 1.0, icon = 136197 } },
             pet = { name = "Flauschi", level = 57, health = 900, healthMax = 1500, npcID = 1 },
         },

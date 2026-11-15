@@ -98,7 +98,7 @@ C.BLIZZARD_SKIP = {
 C.BLIZZARD_NODEPS = { Blizzard_FrameXML = true, Blizzard_Minimap = true }
 -- Von grossen Addons nur einzelne Dateien.
 C.BLIZZARD_ONLY = {
-    Blizzard_FrameXML = { "SecureTemplates.lua", "SecureTemplates.xml", "DeprecatedTemplates.xml" },
+    Blizzard_FrameXML = { "SecureTemplatesBase.xml", "SecureTemplates.lua", "SecureTemplates.xml", "DeprecatedTemplates.xml" },
 }
 
 return C
