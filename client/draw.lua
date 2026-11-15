@@ -11,7 +11,9 @@ local D = {}
 local st = W.st
 
 -- Blizzard-Rahmen, die mitgezeichnet werden, obwohl Blizzard sie angelegt hat.
-D.blizzardAllow = { GameTooltip = true }
+-- Blizzard-Rahmen, die zum Bild gehoeren (samt Kindern): Tooltip und die
+-- Minimap, die ForeverSquareMinimap umbaut.
+D.blizzardAllow = { GameTooltip = true, MinimapCluster = true }
 
 local function intersect(a, b)
     if not a then return b end
@@ -34,8 +36,12 @@ end
 
 local function frameDrawn(f)
     local s = st(f)
-    if s.blizzard and not D.blizzardAllow[s.name or ""] and not s.forceDraw then return false end
-    return true
+    if not s.blizzard or s.forceDraw then return true end
+    while f do
+        if D.blizzardAllow[st(f).name or ""] then return true end
+        f = st(f).parent
+    end
+    return false
 end
 
 local function textureItem(t, s, rect, alpha, clip)
@@ -213,6 +219,14 @@ end
 -- Sammelt Regionen eines Rahmens in Ebenen-Reihenfolge.
 local function frameItems(f, out, alphaOf, clip, hovered)
     local s = st(f)
+    -- Die Minimap-Karte zeichnet der Client selbst: Platzhalter unter den eigenen Regionen.
+    if s.type == "Minimap" then
+        local rect = L.Rect(f)
+        if rect then
+            out[#out + 1] = { k = "model", rect = pixelBox(rect), alpha = f:GetEffectiveAlpha(), clip = clip,
+                label = "Karte", name = f:GetDebugName() }
+        end
+    end
     local regions = {}
     for _, r in ipairs(s.regions or {}) do
         local rs = st(r)

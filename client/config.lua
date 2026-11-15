@@ -45,6 +45,18 @@ function C.ArtDir()
 end
 
 -- Blizzard-Code, der wirklich geladen wird (samt Abhaengigkeiten).
+-- Stephans echte SavedVariables (nur gelesen, nie ins Repo): Konto-Ordner
+-- wird zur Laufzeit gesucht, damit kein Kontoname im Code steht.
+C.WTF_ACCOUNT_ROOT = HOME .. "/Games/Battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/WTF/Account"
+
+function C.WtfSavedDir()
+    for _, name in ipairs(U.listDir(C.WTF_ACCOUNT_ROOT)) do
+        local dir = C.WTF_ACCOUNT_ROOT .. "/" .. name .. "/SavedVariables"
+        if name ~= "SavedVariables" and U.exists(dir) then return dir end
+    end
+    return nil
+end
+
 C.BLIZZARD_ADDONS = {
     "Blizzard_SharedXMLBase",
     "Blizzard_Fonts_Shared",
@@ -56,13 +68,14 @@ C.BLIZZARD_ADDONS = {
     "Blizzard_UIPanelTemplates",
     "Blizzard_AuraContainer",
     "Blizzard_FrameXML",
+    "Blizzard_Minimap",
 }
 -- Abhaengigkeiten, die nur Spielfenster bauen, die kein Addon braucht.
 C.BLIZZARD_SKIP = {
     Blizzard_ScriptErrors = true,
 }
 -- Von FrameXML nur die Vorlagen, nicht seine ~60 Abhaengigkeiten (Spielfenster).
-C.BLIZZARD_NODEPS = { Blizzard_FrameXML = true }
+C.BLIZZARD_NODEPS = { Blizzard_FrameXML = true, Blizzard_Minimap = true }
 -- Von grossen Addons nur einzelne Dateien.
 C.BLIZZARD_ONLY = {
     Blizzard_FrameXML = { "SecureTemplates.lua", "SecureTemplates.xml", "DeprecatedTemplates.xml" },

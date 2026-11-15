@@ -21,7 +21,24 @@ local function find(name)
 end
 S.Find = find
 
+-- Theme (und Farbe) in allen geladenen Forever-Addons ueber ihre
+-- Registrierung _G.ForeverThemes setzen, wie das Theme-Menue des InfoPanel.
+function S.Theme(theme, color, only)
+    local reg = rawget(_G, "ForeverThemes") or {}
+    local names = {}
+    for name in pairs(reg) do names[#names + 1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+        local e = reg[name]
+        if (not only or only == name) and type(e) == "table" and e.Switch then
+            R.Call(e.Switch, theme)
+            if color and e.SetColor then R.Call(e.SetColor, color, theme) end
+        end
+    end
+end
+
 function S.Run(step, scn)
+    if step.theme then S.Theme(step.theme, step.color, step.addon) end
     if step.advance then E.Advance(step.advance) end
     if step.event then E.Fire(step.event, unpack(step.args or {})) end
     if step.run then R.Call(step.run) end

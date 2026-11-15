@@ -53,9 +53,31 @@ W.loadingBlizzard = false
 if State.AfterBlizzard then State.AfterBlizzard() end
 
 R.phase = "addons"
+-- SavedVariables: aus dem Szenario (saved = { Addon = { Var = ... } }) oder
+-- mit wtf = true aus Stephans Konto-Ordner (nur kontoweite Dateien).
+local function savedFor(name)
+    local out = {}
+    if scn.wtf then
+        local dir = Config.WtfSavedDir()
+        local src = dir and U.readFile(dir .. "/" .. name .. ".lua")
+        if src then
+            local env = {}
+            local chunk = loadstring(src, "=WTF/" .. name)
+            if chunk then
+                setfenv(chunk, env)
+                if pcall(chunk) then for k, v in pairs(env) do out[k] = v end end
+            end
+        elseif not dir then
+            R.Note("WTF-Ordner nicht gefunden")
+        end
+    end
+    for k, v in pairs(scn.saved and scn.saved[name] or {}) do out[k] = v end
+    return out
+end
+
 for _, name in ipairs(scn.addons or {}) do
     local dir = Config.ADDONS[name]
-    if not dir then R.Error("Addon unbekannt: " .. name, "") else Ld.LoadAddon(dir, name, scn.saved and scn.saved[name] or (scn.saved or {})) end
+    if not dir then R.Error("Addon unbekannt: " .. name, "") else Ld.LoadAddon(dir, name, savedFor(name)) end
 end
 
 -- Anmeldung wie im Client.
@@ -67,6 +89,7 @@ E.Advance(scn.settle or 1)
 
 R.phase = "scenario"
 local Steps = require("steps")
+if scn.theme then Steps.Theme(scn.theme, scn.color) E.Advance(0.5) end
 for _, step in ipairs(scn.steps or {}) do Steps.Run(step, scn) end
 E.Advance(scn.settleAfter or 0.5)
 

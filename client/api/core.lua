@@ -64,8 +64,40 @@ function C.Install(state, env)
     _G.CreateSecureDelegate = function(fn) return fn end
     _G.SlashCmdList = _G.SlashCmdList or {}
     _G.hash_SlashCmdList = _G.hash_SlashCmdList or {}
+    -- Lua-Erweiterungen des Clients (LuaMath/String/TableExtensions-Doku).
     math.clamp = function(v, lo, hi) return math.min(math.max(v, lo), hi) end
+    math.saturate = function(v) return math.min(math.max(v, 0), 1) end
+    math.lerp = function(a, b, t) return a + (b - a) * t end
+    math.normalize = function(v, lo, hi) return (v - lo) / (hi - lo) end
+    math.remap = function(v, a, b, c, d) return c + (v - a) / (b - a) * (d - c) end
+    math.sign = function(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
+    math.wrap = function(v, lo, hi) local r = hi - lo return lo + (v - lo) % r end
+    math.isnan = function(v) return v ~= v end
+    math.isinf = function(v) return v == math.huge or v == -math.huge end
+    math.isfinite = function(v) return v == v and not math.isinf(v) end
+    math.round = function(v, places)
+        local m = 10 ^ (places or 0)
+        local x = v * m
+        x = x >= 0 and math.floor(x + 0.5) or -math.floor(-x + 0.5)
+        return x / m
+    end
+    string.trim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+    string.ltrim = function(s) return (s:gsub("^%s+", "")) end
+    string.rtrim = function(s) return (s:gsub("%s+$", "")) end
+    string.contains = function(s, x) return s:find(x, 1, true) ~= nil end
+    string.startswith = function(s, x) return s:sub(1, #x) == x end
+    string.endswith = function(s, x) return x == "" or s:sub(-#x) == x end
     table.count = function(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
+    table.contains = function(t, v) for _, x in pairs(t) do if x == v then return true end end return false end
+    table.indexof = function(t, v) for i, x in ipairs(t) do if x == v then return i end end return nil end
+    table.create = function() return {} end
+    table.keys = function(t) local o = {} for k in pairs(t) do o[#o + 1] = k end return o end
+    table.values = function(t) local o = {} for _, v in pairs(t) do o[#o + 1] = v end return o end
+    table.isempty = function(t) return next(t) == nil end
+    table.freeze = function(t) return t end
+    table.isfrozen = function() return false end
+    table.removevalue = function(t, v) local i = table.indexof(t, v) if i then table.remove(t, i) return true end return false end
+    table.removeunordered = function(t, i) local n = #t t[i] = t[n] t[n] = nil end
     -- Atlas-Angaben aus dem Grafik-Archiv (atlas.json).
     _G.C_Texture = _G.C_Texture or {}
     C_Texture.GetAtlasInfo = function(name)

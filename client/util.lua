@@ -13,7 +13,7 @@ end
 local function num(n)
     if n ~= n or n == math.huge or n == -math.huge then return "null" end
     if n == math.floor(n) and math.abs(n) < 1e15 then return string.format("%d", n) end
-    return string.format("%.4f", n):gsub("0+$", "")
+    return (string.format("%.4f", n):gsub("0+$", ""):gsub("%.$", ""))
 end
 
 local function isArray(t)

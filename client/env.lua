@@ -123,10 +123,27 @@ end
 
 -- Doku-Stubs ----------------------------------------------------------------------------
 
-local function stub(label)
+-- Leerwert je dokumentiertem Rueckgabetyp: Zahl 0, bool false, Text "",
+-- Liste {}; nilable und Strukturen bleiben nil. So laufen Aufrufer weiter
+-- wie bei einem leeren Spielstand, der Aufruf steht trotzdem im Bericht.
+local function emptyValue(ret)
+    if ret.Nilable then return nil end
+    local t = ret.Type
+    if t == "number" or t == "luaIndex" or t == "time_t" or t == "BigUInteger" or t == "WOWMONEY" or t == "fileID" then return 0 end
+    if t == "bool" then return false end
+    if t == "cstring" or t == "string" then return "" end
+    if t == "table" then return {} end
+    if _G.Enum and rawget(_G.Enum, t) then return 0 end
+    return nil
+end
+
+local function stub(label, fn)
+    local rets = fn and fn.Returns or {}
     return function()
         R.Missing("api", label)
-        return nil
+        local out = {}
+        for i, r in ipairs(rets) do out[i] = emptyValue(r) end
+        return unpack(out, 1, #rets)
     end
 end
 
@@ -142,7 +159,7 @@ local function installDocStubs(D)
         end
         for _, fn in ipairs(sys.Functions or {}) do
             if rawget(target, fn.Name) == nil then
-                target[fn.Name] = stub((ns and ns .. "." or "") .. fn.Name)
+                target[fn.Name] = stub((ns and ns .. "." or "") .. fn.Name, fn)
                 Env.stubbed[(ns and ns .. "." or "") .. fn.Name] = target[fn.Name]
             end
         end
@@ -286,6 +303,7 @@ function Env.Install(D, scn)
     _G.RegisterUnitWatch = function(frame, asState) Env.RegisterUnitWatch(frame, asState) end
     _G.UnregisterUnitWatch = function() end
     _G.UnitWatchRegistered = function() return false end
+    _G.SecureCmdOptionParse = function(spec) return Env.EvalConditional(spec) end
     Env.epoch = scn.epoch or 1794700800 -- 2026-11-15 00:00 UTC als feste Szenario-Zeit
     Env.clockStart = E.clock
     makeRoots(scn)
