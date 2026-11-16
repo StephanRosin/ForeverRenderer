@@ -141,8 +141,12 @@ local function installItems()
     _G.C_Item = _G.C_Item or {}
     C_Item.GetItemCount = function(id) return count(id) end
     _G.GetItemCount = C_Item.GetItemCount
+    local function byName(name)
+        for k, v in pairs(list("items")) do if v.name == name then return k end end
+        return name
+    end
     local function itemInfo(id)
-        if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) or id end
+        if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) or byName(id) end
         local info = itemOf(id)
         if not info then return nil end
         local link = "|cffffffff|Hitem:" .. id .. "|h[" .. info.name .. "]|h|r"
@@ -156,6 +160,13 @@ local function installItems()
         local info = itemOf(id)
         if not info then return nil end
         return id, info.type or "Consumable", info.subType or "", info.equipLoc or "", info.icon or QUESTION_MARK_ICON, info.classID or 0, info.subclassID or 0
+    end
+    -- Blizzard_Colors: Grau, Weiss, Gruen, Blau, Lila, Orange.
+    local QUALITY = { [0] = "9d9d9d", "ffffff", "1eff00", "0070dd", "a335ee", "ff8000" }
+    C_Item.GetItemQualityColor = function(q)
+        local hex = QUALITY[q] or QUALITY[1]
+        local function c(i) return tonumber(hex:sub(i, i + 1), 16) / 255 end
+        return c(1), c(3), c(5), "ff" .. hex
     end
     C_Item.GetItemNameByID = function(id) local i = itemOf(id) return i and i.name end
     C_Item.GetItemIconByID = function(id) local i = itemOf(id) return i and i.icon or QUESTION_MARK_ICON end
@@ -281,6 +292,19 @@ local function installCurrencies()
             isTradeable = false, quality = 1, maxWeeklyQuantity = 0, totalEarned = c.quantity or 0, discovered = true,
             useTotalEarnedForMaxQty = false, isAccountWide = false, isAccountTransferable = false, transferPercentage = 0,
             rechargingCycleDurationMS = 0, rechargingAmountPerCycle = 0 }
+    end
+    -- Wie Blizzards GetCoinTextureString: Zahl, Muenzsymbol, Leerzeichen; nur besetzte Stellen.
+    C_CurrencyInfo.GetCoinTextureString = function(money, size)
+        size = size or 14
+        local parts = {}
+        for _, c in ipairs({ { 10000, "UI-GoldIcon" }, { 100, "UI-SilverIcon" }, { 1, "UI-CopperIcon" } }) do
+            local n = math.floor(money / c[1])
+            if c[1] < 10000 then n = n % 100 end
+            if n > 0 or (c[1] == 1 and #parts == 0) then
+                parts[#parts + 1] = n .. "|TInterface\\MoneyFrame\\" .. c[2] .. ":" .. size .. ":" .. size .. ":2:0|t"
+            end
+        end
+        return table.concat(parts, " ")
     end
     C_CurrencyInfo.GetCurrencyListSize = function() local n = 0 for _ in pairs(cur) do n = n + 1 end return n end
 end
