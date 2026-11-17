@@ -173,11 +173,33 @@ local function installItems()
     C_Item.GetItemQualityByID = function(id) local i = itemOf(id) return i and i.quality end
     C_Item.IsItemDataCachedByID = function(id) return itemOf(id) ~= nil end
     C_Item.RequestLoadItemDataByID = function() end
+    -- state.items[id].stats: GetItemStats' table ({ ITEM_MOD_STAMINA_SHORT = 9, ... }).
+    C_Item.GetItemStats = function(link)
+        local id = tonumber(tostring(link or ""):match("item:(%d+)"))
+        local info = id and itemOf(id)
+        return info and info.stats or nil
+    end
+    _G.GetItemStats = C_Item.GetItemStats
     C_Item.GetItemSpell = function(id) local i = itemOf(id) if i and i.spell then local sp = spellOf(i.spell) return sp and sp.name, i.spell end return nil end
     C_Item.IsItemInRange = function() return true end
     C_Item.GetWeaponEnchantInfo = function() return false end
     _G.GetItemSpell = C_Item.GetItemSpell
     _G.GetItemIcon = C_Item.GetItemIconByID
+end
+
+-- World map art: state.maps[uiMapID] = { layer = { layerWidth, layerHeight,
+-- tileWidth, tileHeight }, tiles = { fileID, ... } } (row by row, as the client).
+local function installMaps()
+    _G.C_Map = _G.C_Map or {}
+    C_Map.GetMapArtLayers = function(id)
+        local m = state.maps and state.maps[id]
+        return m and { m.layer } or nil
+    end
+    C_Map.GetMapArtLayerTextures = function(id)
+        local m = state.maps and state.maps[id]
+        return m and m.tiles or nil
+    end
+    C_Map.GetAreaInfo = C_Map.GetAreaInfo or function() return nil end
 end
 
 local function installSpells()
@@ -399,7 +421,19 @@ local function installMisc()
     _G.C_ClassTalents = _G.C_ClassTalents or {}
     C_ClassTalents.HasUnspentTalentPoints = function() return (state.unspentTalents or 0) > 0 end
     _G.C_TradeSkillUI = _G.C_TradeSkillUI or {}
-    C_TradeSkillUI.GetRecipesTracked = function() return {} end
+    -- Verfolgte Rezepte (Loot Finder: "Rezept verfolgen"); Szenario: trackedRecipes = { spellID, ... }.
+    local tracked = {}
+    for _, id in ipairs(state.trackedRecipes or {}) do tracked[id] = true end
+    C_TradeSkillUI.GetRecipesTracked = function(isRecraft)
+        local ids = {}
+        if not isRecraft then for id in pairs(tracked) do ids[#ids + 1] = id end end
+        table.sort(ids)
+        return ids
+    end
+    C_TradeSkillUI.IsRecipeTracked = function(id, isRecraft) return not isRecraft and tracked[id] == true end
+    C_TradeSkillUI.SetRecipeTracked = function(id, on, isRecraft)
+        if not isRecraft then tracked[id] = on and true or nil end
+    end
     -- Fertigkeitslinien der Berufe (Blizzards Constants.lua baut daraus Tabellen).
     local SKILL_LINES = { FirstAid = 129, Blacksmithing = 164, Leatherworking = 165, Alchemy = 171, Herbalism = 182,
         Cooking = 185, Mining = 186, Tailoring = 197, Engineering = 202, Enchanting = 333, Fishing = 356, Skinning = 393,
@@ -498,6 +532,7 @@ function X.Install(st, env)
     state = st
     installMacros()
     installItems()
+    installMaps()
     installSpells()
     installSkills()
     installReputation()
