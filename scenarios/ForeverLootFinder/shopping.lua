@@ -15,6 +15,7 @@ return {
         ns.Shopping.Add(990001, 1)
         ns.Shopping.Add(990006, 3)
         ns.Shopping.Add(990003, 1)
+        ns.Shopping.SetSort("slot")
         ns.Window.ShowTab("shop")
         ns.ShoppingUI.ShowNote(true)
     end }, { advance = 0.3 } },
