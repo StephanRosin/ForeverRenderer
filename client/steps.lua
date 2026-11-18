@@ -22,7 +22,8 @@ end
 S.Find = find
 
 -- Alle Theme-Kennungen der Forever-Familie (Themes.IDS der Addons).
-S.THEME_IDS = { "CLASSIC", "WOOD", "TECH", "PARCHMENT", "RUNESTONE", "GLASS", "COMIC", "FROST", "PIXEL", "SWISS", "CONSOLE", "PITWALL" }
+S.THEME_IDS = { "CLASSIC", "WOOD", "TECH", "PARCHMENT", "RUNESTONE", "GLASS", "COMIC", "FROST", "PIXEL", "SWISS", "CONSOLE", "PITWALL",
+    "WOOD_HD", "TECH_HD", "PARCHMENT_HD", "RUNESTONE_HD", "GLASS_HD", "COMIC_HD", "FROST_HD" }
 
 -- Je Addon: aktuelles Theme und Farben je Theme, fuer Bilderbogen und Bericht.
 function S.ThemeInfo()
