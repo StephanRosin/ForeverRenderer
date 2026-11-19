@@ -261,7 +261,23 @@ local function installSkills()
     end
     C_SkillInfo.ExpandSkillHeader = function(i) local s = visible()[i] if s then s.isCollapsed = false end end
     C_SkillInfo.CollapseSkillHeader = function(i) local s = visible()[i] if s then s.isCollapsed = true end end
-    _G.GetProfessions = function() return nil end
+    -- The skills (not headers) as spellbook professions: index = place in the list, skillLine = skillID.
+    local function professions()
+        local out = {}
+        for _, s in ipairs(skills) do if not s.isHeader and #out < 7 then out[#out + 1] = s end end
+        return out
+    end
+    _G.GetProfessions = function()
+        local n = #professions()
+        local idx = {}
+        for i = 1, n do idx[i] = i end
+        return unpack(idx, 1, n)
+    end
+    _G.GetProfessionInfo = function(i)
+        local s = professions()[i]
+        if not s then return nil end
+        return s.name, 134400, s.rank or 0, s.maxRank or 0, 1, i * 2, s.skillID or 0
+    end
 end
 
 local function installReputation()
