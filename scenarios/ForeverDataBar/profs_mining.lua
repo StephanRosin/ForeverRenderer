@@ -2,7 +2,7 @@
 local state = require("_data").Full()
 state.skills = {
     { name = "Professions", isHeader = true },
-    { name = "Mining", rank = 240, maxRank = 300, skillID = 186 },
+    { name = "Mining", rank = 112, maxRank = 150, skillID = 186 },
     { name = "Herbalism", rank = 160, maxRank = 225, skillID = 182 },
     { name = "Secondary Skills", isHeader = true },
     { name = "Cooking", rank = 225, maxRank = 300, skillID = 185 },
