@@ -31,9 +31,12 @@ local function list(unit, filter)
     if not u then return out end
     filter = (filter or "HELPFUL"):upper()
     local harmful = filter:find("HARMFUL") ~= nil
-    local onlyMine = filter:find("PLAYER") ~= nil
+    -- "PLAYER": yours only; "!PLAYER": everyone else's.
+    local notMine = filter:find("!PLAYER", 1, true) ~= nil
+    local onlyMine = not notMine and filter:find("PLAYER", 1, true) ~= nil
     for i, a in ipairs(u.auras or {}) do
-        if (a.harmful or false) == harmful and (not onlyMine or a.fromPlayer) then
+        local mine = a.fromPlayer or false
+        if (a.harmful or false) == harmful and (not onlyMine or mine) and not (notMine and mine) then
             out[#out + 1] = auraData(unit, a, i)
         end
     end
