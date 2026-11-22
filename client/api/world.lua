@@ -408,7 +408,13 @@ local function installQuests()
     C_SuperTrack.GetSuperTrackedQuestID = function() return state.superTracked or 0 end
     C_SuperTrack.SetSuperTrackedQuestID = function(id) state.superTracked = id end
     C_SuperTrack.ClearAllSuperTracked = function() state.superTracked = 0 end
-    _G.GetQuestLogSpecialItemInfo = function() return nil end
+    -- Quest item: item = { link, icon, charges } on the scenario's quest.
+    _G.GetQuestLogSpecialItemInfo = function(logIndex)
+        local q = quests[logIndex]
+        local it = q and q.item
+        if not it then return nil end
+        return it.link, it.icon, it.charges or 1, it.showWhenComplete or false
+    end
     -- "Laternenscherben: 3/8" wie der Client; kind/finished aus dem Szenario.
     _G.GetQuestLogLeaderBoard = function(i, logIndex)
         local q = quests[logIndex or state.selectedLogIndex or 0]
