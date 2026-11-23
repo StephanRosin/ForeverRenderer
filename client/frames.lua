@@ -755,6 +755,8 @@ function Tip:ClearLines()
     s.inserted = {}
 end
 function Tip:NumLines() return st(self).numLines or 0 end
+function Tip:GetLeftLine(i) return tipLine(self, i).left end
+function Tip:GetRightLine(i) return tipLine(self, i).right end
 local function addLine(self, left, right, lc, rc, wrap)
     local s = st(self)
     s.numLines = (s.numLines or 0) + 1
