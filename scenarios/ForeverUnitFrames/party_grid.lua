@@ -11,5 +11,12 @@ if orient then steps[#steps + 1] = { call = "ForeverUnitFrames:Config.Set", args
 if os.getenv("FOREVER_PARTY_REVERSE") then
     steps[#steps + 1] = { call = "ForeverUnitFrames:Config.Set", args = { "party", "partyGrowReverse", true } }
 end
+-- FOREVER_PARTY_EXTRAS=1: Party-Targets rechts, Begleiter daneben.
+if os.getenv("FOREVER_PARTY_EXTRAS") then
+    steps[#steps + 1] = { call = "ForeverUnitFrames:Config.Set", args = { "party", "partyTargets", true } }
+    steps[#steps + 1] = { call = "ForeverUnitFrames:Config.Set", args = { "party", "partyShowPets", true } }
+    steps[#steps + 1] = { call = "ForeverUnitFrames:Config.Set", args = { "party", "partyPetLayout", "BESIDE" } }
+    steps[#steps + 1] = { call = "ForeverUnitFrames:Config.Set", args = { "party", "partyPetSide", "LEFT" } }
+end
 steps[#steps + 1] = { advance = 0.5 }
 return { addons = { "ForeverUnitFrames" }, uiScale = 0.77, crop = "auto", state = D.Group(D.Full()), steps = steps }
