@@ -136,8 +136,14 @@ function L.Compute(o, s)
     local function axis(c, size)
         local lo, mid, hi = c[0], c[0.5], c[1]
         if lo and hi then return lo, hi - lo, true end
-        if lo and mid then return lo, 2 * (mid - lo), true end
-        if hi and mid then return 2 * mid - hi, 2 * (hi - mid), true end
+        -- Kante und Mitte (TOP + LEFT, so legt ein Gruppenkopf mit Spalten
+        -- seinen ersten Knopf an): mit fester Groesse gewinnt die Kante,
+        -- die Mitte zaehlt nicht. Ohne Groesse und bei Text (Groesse nur
+        -- gemessen) spannt die Mitte den Rahmen wie bisher.
+        if size <= 0 or s.measure then
+            if lo and mid then return lo, 2 * (mid - lo), true end
+            if hi and mid then return 2 * mid - hi, 2 * (hi - mid), true end
+        end
         size = size * es
         if lo then return lo, size, false end
         if hi then return hi - size, size, false end
