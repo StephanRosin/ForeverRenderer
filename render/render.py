@@ -154,7 +154,7 @@ class Renderer:
             else:
                 u = (ulx * (1 - s) * (1 - t) + urx * s * (1 - t) + llx * (1 - s) * t + lrx * s * t)
                 v = (uly * (1 - s) * (1 - t) + ury * s * (1 - t) + lly * (1 - s) * t + lry * s * t)
-            rgba = sample(tex, u, v, bool(it.get("tileH")), bool(it.get("tileV")))
+            rgba = sample(tex, u, v, bool(it.get("wrapH")), bool(it.get("wrapV")))
             if rot:
                 rgba[(s < 0) | (s > 1) | (t < 0) | (t > 1), 3] = 0
         vertex = it.get("vertex")

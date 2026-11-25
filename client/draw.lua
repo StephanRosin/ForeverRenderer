@@ -90,8 +90,12 @@ local function textureItem(t, s, rect, alpha, clip)
     item.desat = s.desat
     if s.rotation and s.rotation ~= 0 then item.rotation = s.rotation item.rotCenter = s.rotCenter end
     if s.horizTile or s.vertTile or s.wrapH == "REPEAT" or s.wrapV == "REPEAT" then
-        item.tileH = s.horizTile or s.wrapH == "REPEAT" or nil
-        item.tileV = s.vertTile or s.wrapV == "REPEAT" or nil
+        -- Wie im Client: nur Set*Tile kachelt selbst in Texturgrösse; REPEAT
+        -- allein legt nur den Wrap-Modus fest, die Texturkoordinaten zählen.
+        item.tileH = s.horizTile or nil
+        item.tileV = s.vertTile or nil
+        item.wrapH = s.horizTile or s.wrapH == "REPEAT" or nil
+        item.wrapV = s.vertTile or s.wrapV == "REPEAT" or nil
         -- Kacheln in Texturpixeln: Bildschirm-Pixel je Texturpixel = effektive Skalierung * ppu.
         item.tileScale = L.EffectiveScale(t) * L.PixelsPerUnit()
     end

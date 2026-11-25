@@ -25,8 +25,14 @@ end
 
 local scn = assert(dofile(scenarioPath), "Szenario liefert keine Tabelle")
 -- extends = "compare/_base": Felder des Basisszenarios, eigene gewinnen.
-if scn.extends then
-    local base = assert(dofile(Config.ROOT .. "/scenarios/" .. scn.extends .. ".lua"), "Basisszenario fehlt")
+-- Auch über mehrere Stufen (ein Basisszenario kann selbst erben).
+local seen = {}
+while scn.extends do
+    local name = scn.extends
+    assert(not seen[name], "extends im Kreis: " .. name)
+    seen[name] = true
+    scn.extends = nil
+    local base = assert(dofile(Config.ROOT .. "/scenarios/" .. name .. ".lua"), "Basisszenario fehlt: " .. name)
     for k, v in pairs(base) do if scn[k] == nil then scn[k] = v end end
 end
 local screen = scn.screen or Config.DEFAULT_SCREEN
